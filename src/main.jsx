@@ -425,7 +425,7 @@ function App() {
         <section className="login-card">
           <div>
             <p className="kicker">AI Image Platform</p>
-            <h1>{authMode === 'login' ? '登录后继续生成图片' : '注册账号开始体验'}</h1>
+            <h1>{authMode === 'login' ? '登录' : '注册'}</h1>
             <p className="muted">账号 5-15 位，只能使用英文字母；密码 6-20 位，支持英文、数字和常见特殊符号。管理员初始密码为 admin123。</p>
           </div>
           <form className="login-form" onSubmit={handleLogin}>
