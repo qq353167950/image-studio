@@ -186,9 +186,9 @@ function App() {
   }, [token, currentJob?.id, currentJob?.status]);
 
   useEffect(() => {
-    document.body.classList.toggle('modal-open', settingsOpen || passwordOpen || Boolean(lightboxJob) || Boolean(deleteConfirmJob));
+    document.body.classList.toggle('modal-open', Boolean(lightboxJob) || Boolean(deleteConfirmJob));
     return () => document.body.classList.remove('modal-open');
-  }, [settingsOpen, passwordOpen, lightboxJob, deleteConfirmJob]);
+  }, [lightboxJob, deleteConfirmJob]);
 
   async function refreshHistory() {
     const data = await api('/api/jobs', { token });
