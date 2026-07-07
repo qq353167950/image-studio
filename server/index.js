@@ -7,6 +7,8 @@ import { execSync } from 'node:child_process';
 import { startTunnel } from './tunnel.js';
 
 const app = express();
+// 关闭 ETag，避免 GET API 返回 304 让前端拿到空 body 而解析失败（弹窗打不开）。
+app.set('etag', false);
 const port = process.env.SERVER_PORT || process.env.PORT || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, '..', 'dist');
@@ -24,6 +26,12 @@ const jobSubscribers = new Map();
 const clientDiagnostics = [];
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '16mb' }));
+
+// API 响应一律不缓存，避免 304 导致前端拿到空 body。
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 const providers = loadModelConfig();
 

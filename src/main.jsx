@@ -908,13 +908,18 @@ function imageSrc(url, token) {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     method: options.method || 'GET',
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
     },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const data = await response.json();
+
+  // 空 body（如 304 / 204）时 response.json() 会抛错，这里容错处理。
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
     throw new Error(data.error || '请求失败');
