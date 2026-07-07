@@ -308,6 +308,7 @@ function App() {
 
   async function openUserSettings() {
     setSettingsMode('user');
+    setPasswordOpen(false);
     setSettingsOpen(true);
     try {
       const data = await api('/api/settings', { token });
@@ -319,6 +320,7 @@ function App() {
 
   async function openAdminSettings() {
     setSettingsMode('admin');
+    setPasswordOpen(false);
     setSettingsOpen(true);
     try {
       const data = await api('/api/admin/settings', { token });
@@ -338,6 +340,11 @@ function App() {
     event.stopPropagation();
     touchActivationAtRef.current = Date.now();
     action();
+  }
+
+  function openPasswordSettings() {
+    setSettingsOpen(false);
+    setPasswordOpen(true);
   }
 
   async function handleChangePassword(event) {
@@ -476,7 +483,7 @@ function App() {
           <span>{user.role === 'admin' ? '管理员' : '用户'} · {user.username}</span>
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>接口配置</button>
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openAdminSettings)} onClick={() => runTopbarAction(openAdminSettings)}>默认模型配置</button> : null}
-          <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, () => setPasswordOpen(true))} onClick={() => runTopbarAction(() => setPasswordOpen(true))}>修改密码</button>
+          <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openPasswordSettings)} onClick={() => runTopbarAction(openPasswordSettings)}>修改密码</button>
           <button type="button" onClick={handleLogout}>退出</button>
         </div>
       </header>
