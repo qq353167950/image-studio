@@ -8,14 +8,12 @@
 
 html,
 body {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   overscroll-behavior: none;
 }
 
 #root {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
 }
 
 * {
@@ -25,7 +23,6 @@ body {
 body {
   margin: 0;
   min-width: 320px;
-  height: 100%;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(246, 247, 251, 0.94)),
     radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.12), transparent 32rem),
@@ -51,9 +48,7 @@ a {
 
 .login-page {
   display: grid;
-  height: 100dvh;
-  overflow-y: auto;
-  overscroll-behavior: none;
+  min-height: 100dvh;
   place-items: center;
   padding: 24px;
 }
@@ -180,10 +175,8 @@ button,
 
 .app-shell {
   width: min(1320px, calc(100% - 32px));
-  height: 100dvh;
+  min-height: 100dvh;
   margin: 0 auto;
-  overflow-y: auto;
-  overscroll-behavior: none;
   padding: 32px 0 48px;
 }
 

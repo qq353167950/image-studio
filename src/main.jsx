@@ -221,6 +221,10 @@ function App() {
   async function handleGenerate(event) {
     event.preventDefault();
     setToast('');
+    if (!form.prompt.trim()) {
+      setToast('请先输入提示词再开始生成');
+      return;
+    }
     setSubmittingJob(true);
     const pendingJob = {
       id: 'local-pending',
@@ -518,7 +522,7 @@ function App() {
         <section className="card preview-card">
           <div className="section-head">
             <h2>预览区</h2>
-            <span>{activeJob?.status === 'completed' ? '已完成' : activeJob ? '生成中' : '待生成'}</span>
+            <span>{activeJob?.status === 'completed' ? '已完成' : activeJob?.status === 'failed' ? '生成失败' : activeJob ? '生成中' : '待生成'}</span>
           </div>
           {activeJob?.status === 'failed' ? null : <JobProgress job={activeJob} />}
           <ImagePreview job={activeJob} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} />
