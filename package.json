@@ -1,0 +1,24 @@
+{
+  "name": "image-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_PATH=$(npm root -g) concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "NODE_PATH=$(npm root -g) vite --host 0.0.0.0",
+    "dev:server": "NODE_PATH=$(npm root -g) node --watch server/index.js",
+    "build": "NODE_PATH=$(npm root -g) vite build",
+    "preview": "NODE_PATH=$(npm root -g) vite preview --host 0.0.0.0",
+    "start": "NODE_PATH=$(npm root -g) node server/index.js",
+    "serve": "NODE_PATH=$(npm root -g) node server/index.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "express": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {}
+}

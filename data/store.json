@@ -1,0 +1,13 @@
+{
+  "users": [
+    {
+      "id": "admin",
+      "username": "admin",
+      "password": "admin123",
+      "role": "admin",
+      "createdAt": "2026-07-07T04:59:32.470Z"
+    }
+  ],
+  "jobs": [],
+  "settings": {}
+}

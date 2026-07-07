@@ -1,0 +1,38 @@
+{
+  "models": [
+    {
+      "id": "gpt",
+      "name": "GPT",
+      "provider": "openai",
+      "modeLabel": "OpenAI 兼容接口",
+      "defaultBaseUrl": "https://api.openai.com/v1",
+      "defaultGenerationModel": "gpt-image-2",
+      "defaultEditModel": "gpt-image-2",
+      "defaultResponsesModel": "gpt-5.4-mini",
+      "defaultChatModel": "gpt-5.4-mini",
+      "apiKeyEnv": "GPT_IMAGE_API_KEY",
+      "supportsTextToImage": true,
+      "supportsImageToImage": true,
+      "supportsResponses": true,
+      "supportsChatCompletions": true,
+      "responseFormat": "b64_json"
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "provider": "xai",
+      "modeLabel": "xAI OpenAI 兼容接口",
+      "defaultBaseUrl": "https://api.x.ai/v1",
+      "defaultGenerationModel": "grok-imagine-image-quality",
+      "defaultEditModel": "",
+      "defaultResponsesModel": "",
+      "defaultChatModel": "",
+      "apiKeyEnv": "XAI_API_KEY",
+      "supportsTextToImage": true,
+      "supportsImageToImage": false,
+      "supportsResponses": false,
+      "supportsChatCompletions": false,
+      "responseFormat": "b64_json"
+    }
+  ]
+}
