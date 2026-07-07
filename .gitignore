@@ -115,6 +115,10 @@
 **/config/tunnel-token.txt
 **/bin/cloudflared
 
+# 例外：项目根的前端构建产物要提交进仓库（服务器容器 Node 版本过低无法构建）
+!/dist/
+!/dist/**
+
 # Temporary files
 *.tmp
 *.temp

@@ -1,6 +1,6 @@
 import express from 'express';
 import { createHmac, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -306,9 +306,12 @@ app.delete('/api/jobs/:id', requireAuth, (req, res) => {
   res.json({ deleted: true, mode: 'hidden' });
 });
 
+// dist/ 已随仓库提交，正常情况下容器直接使用现成的构建产物。
+// 仅当 dist 完全缺失时才尝试兜底构建（注意：部分容器 Node 版本偏低，
+// vite build 可能失败——此时请在本地构建后提交 dist/，不要依赖容器构建）。
 if (!existsSync(distDir) && process.env.SKIP_AUTO_BUILD !== '1') {
   try {
-    console.log('dist/ 不存在，正在构建前端 (vite build)…');
+    console.log('dist/ 缺失，尝试兜底构建（vite build）…若失败请在本地构建后提交 dist/。');
     execSync('npm run build', {
       cwd: join(__dirname, '..'),
       stdio: 'inherit',
@@ -316,7 +319,7 @@ if (!existsSync(distDir) && process.env.SKIP_AUTO_BUILD !== '1') {
     });
     console.log('前端构建完成。');
   } catch (error) {
-    console.error('前端自动构建失败，将只提供 API：', error?.message || error);
+    console.error('前端兜底构建失败，将只提供 API（请在本地构建后提交 dist/）：', error?.message || error);
   }
 }
 
