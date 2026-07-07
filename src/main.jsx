@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -43,6 +44,7 @@ function App() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '' });
   const [availableModels, setAvailableModels] = useState({ gpt: [], grok: [] });
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const touchActivationAtRef = useRef(0);
   const [form, setForm] = useState({
     prompt: '',
     providerId: 'gpt',
@@ -326,6 +328,18 @@ function App() {
     }
   }
 
+  function runTopbarAction(action) {
+    if (Date.now() - touchActivationAtRef.current < 700) return;
+    action();
+  }
+
+  function runTopbarTouchAction(event, action) {
+    event.preventDefault();
+    event.stopPropagation();
+    touchActivationAtRef.current = Date.now();
+    action();
+  }
+
   async function handleChangePassword(event) {
     event.preventDefault();
     setToast('');
@@ -460,9 +474,9 @@ function App() {
         </div>
         <div className="account-pill">
           <span>{user.role === 'admin' ? '管理员' : '用户'} · {user.username}</span>
-          <button type="button" onClick={openUserSettings}>接口配置</button>
-          {user.role === 'admin' ? <button type="button" onClick={openAdminSettings}>默认模型配置</button> : null}
-          <button type="button" onClick={() => setPasswordOpen(true)}>修改密码</button>
+          <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>接口配置</button>
+          {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openAdminSettings)} onClick={() => runTopbarAction(openAdminSettings)}>默认模型配置</button> : null}
+          <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, () => setPasswordOpen(true))} onClick={() => runTopbarAction(() => setPasswordOpen(true))}>修改密码</button>
           <button type="button" onClick={handleLogout}>退出</button>
         </div>
       </header>
@@ -529,7 +543,7 @@ function App() {
         </section>
       </section>
 
-      {settingsOpen ? (
+      {settingsOpen ? createPortal(
         <SettingsDialog
           settings={settings}
           setSettings={setSettings}
@@ -540,16 +554,18 @@ function App() {
           onFetchModels={handleFetchModels}
           onSubmit={handleSaveSettings}
           onClose={() => setSettingsOpen(false)}
-        />
+        />,
+        document.body
       ) : null}
 
-      {passwordOpen ? (
+      {passwordOpen ? createPortal(
         <PasswordDialog
           form={passwordForm}
           setForm={setPasswordForm}
           onSubmit={handleChangePassword}
           onClose={() => setPasswordOpen(false)}
-        />
+        />,
+        document.body
       ) : null}
 
       <section className="card history-card">
@@ -566,8 +582,8 @@ function App() {
       </section>
 
       {toast ? <div className="floating-toast">{toast}</div> : null}
-      {lightboxJob ? <Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} /> : null}
-      {deleteConfirmJob ? <ConfirmDialog job={deleteConfirmJob} user={user} onCancel={() => setDeleteConfirmJob(null)} onConfirm={() => handleDeleteJob(deleteConfirmJob)} /> : null}
+      {lightboxJob ? createPortal(<Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} />, document.body) : null}
+      {deleteConfirmJob ? createPortal(<ConfirmDialog job={deleteConfirmJob} user={user} onCancel={() => setDeleteConfirmJob(null)} onConfirm={() => handleDeleteJob(deleteConfirmJob)} />, document.body) : null}
     </main>
   );
 }

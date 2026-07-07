@@ -459,7 +459,7 @@ button,
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 28;
+  z-index: 10000;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -934,7 +934,7 @@ button,
 .lightbox {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 10010;
   display: grid;
   place-items: center;
   padding: 24px;
