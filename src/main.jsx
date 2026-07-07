@@ -481,6 +481,31 @@ function App() {
         </div>
       </header>
 
+      {settingsOpen ? (
+        <SettingsDialog
+          inline
+          settings={settings}
+          setSettings={setSettings}
+          availableModels={availableModels}
+          activeTab={settingsTab}
+          setActiveTab={setSettingsTab}
+          mode={settingsMode}
+          onFetchModels={handleFetchModels}
+          onSubmit={handleSaveSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+
+      {passwordOpen ? (
+        <PasswordDialog
+          inline
+          form={passwordForm}
+          setForm={setPasswordForm}
+          onSubmit={handleChangePassword}
+          onClose={() => setPasswordOpen(false)}
+        />
+      ) : null}
+
       <section className="workspace">
         <form className="card composer" onSubmit={handleGenerate}>
           <ProviderTabs models={models} selectedId={form.providerId} onSelect={(providerId) => {
@@ -542,31 +567,6 @@ function App() {
           <ImagePreview job={activeJob} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} />
         </section>
       </section>
-
-      {settingsOpen ? createPortal(
-        <SettingsDialog
-          settings={settings}
-          setSettings={setSettings}
-          availableModels={availableModels}
-          activeTab={settingsTab}
-          setActiveTab={setSettingsTab}
-          mode={settingsMode}
-          onFetchModels={handleFetchModels}
-          onSubmit={handleSaveSettings}
-          onClose={() => setSettingsOpen(false)}
-        />,
-        document.body
-      ) : null}
-
-      {passwordOpen ? createPortal(
-        <PasswordDialog
-          form={passwordForm}
-          setForm={setPasswordForm}
-          onSubmit={handleChangePassword}
-          onClose={() => setPasswordOpen(false)}
-        />,
-        document.body
-      ) : null}
 
       <section className="card history-card">
           <div className="section-head">
@@ -681,7 +681,7 @@ function MethodPicker({ models, form, setForm, setProviderMethods }) {
   );
 }
 
-function SettingsDialog({ settings, setSettings, availableModels, activeTab, setActiveTab, mode, onFetchModels, onSubmit, onClose }) {
+function SettingsDialog({ inline = false, settings, setSettings, availableModels, activeTab, setActiveTab, mode, onFetchModels, onSubmit, onClose }) {
   const [visibleKeys, setVisibleKeys] = useState({ gpt: false, grok: false });
 
   function handleClose(event) {
@@ -690,9 +690,8 @@ function SettingsDialog({ settings, setSettings, availableModels, activeTab, set
     onClose();
   }
 
-  return (
-    <div className="modal-backdrop" onClick={handleClose}>
-      <div className="settings-modal" onClick={(event) => event.stopPropagation()}>
+  const content = (
+      <div className={inline ? 'settings-modal inline-settings-panel' : 'settings-modal'} onClick={(event) => event.stopPropagation()}>
         <form className="settings-card" onSubmit={(event) => event.preventDefault()}>
           <div className="section-head">
             <h2>{mode === 'admin' ? '默认模型配置' : '接口配置'}</h2>
@@ -735,6 +734,13 @@ function SettingsDialog({ settings, setSettings, availableModels, activeTab, set
           </div>
         </form>
       </div>
+  );
+
+  if (inline) return <section className="card inline-panel-wrap">{content}</section>;
+
+  return (
+    <div className="modal-backdrop" onClick={handleClose}>
+      {content}
     </div>
   );
 }
@@ -751,10 +757,9 @@ function SecretInput({ label, value, placeholder, visible, onToggle, onChange })
   );
 }
 
-function PasswordDialog({ form, setForm, onSubmit, onClose }) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="settings-modal password-modal" onClick={(event) => event.stopPropagation()}>
+function PasswordDialog({ inline = false, form, setForm, onSubmit, onClose }) {
+  const content = (
+      <div className={inline ? 'settings-modal password-modal inline-settings-panel' : 'settings-modal password-modal'} onClick={(event) => event.stopPropagation()}>
         <form className="settings-card" onSubmit={onSubmit}>
           <div className="section-head">
             <h2>修改密码</h2>
@@ -775,6 +780,13 @@ function PasswordDialog({ form, setForm, onSubmit, onClose }) {
           </div>
         </form>
       </div>
+  );
+
+  if (inline) return <section className="card inline-panel-wrap">{content}</section>;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      {content}
     </div>
   );
 }

@@ -480,6 +480,22 @@ button,
   box-shadow: 0 30px 90px rgba(15, 23, 42, 0.22);
 }
 
+.inline-panel-wrap {
+  margin-bottom: 20px;
+  padding: 22px;
+}
+
+.inline-settings-panel {
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .confirm-modal {
   width: min(520px, 100%);
   padding: 24px;
@@ -535,6 +551,12 @@ button,
   border-top: 1px solid #e5e7eb;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
+}
+
+.inline-settings-panel .settings-actions {
+  margin: 0;
+  padding: 14px 0 0;
+  bottom: 0;
 }
 
 .progress-panel {
