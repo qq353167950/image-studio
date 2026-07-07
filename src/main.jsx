@@ -1100,10 +1100,9 @@ function installClientDiagnostics() {
     const movingDownAtTop = scroller.scrollTop <= 0 && currentY > touchStartY;
     const movingUpAtBottom = Math.ceil(scroller.clientHeight + scroller.scrollTop) >= scroller.scrollHeight && currentY < touchStartY;
     if (movingDownAtTop || movingUpAtBottom) {
-      event.preventDefault();
       report('blocked-edge-touch', { movingDownAtTop, movingUpAtBottom });
     }
-  }, { passive: false });
+  }, { passive: true });
   document.addEventListener('click', (event) => {
     const target = event.target?.closest?.('a, button, input, select, textarea, label');
     if (!target) return;
