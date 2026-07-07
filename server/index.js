@@ -1432,7 +1432,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-const host = process.env.SERVER_IP || '0.0.0.0';
+// 始终绑 0.0.0.0（涵盖 127.0.0.1），不要用面板注入的外网 SERVER_IP，
+// 否则 cloudflared 从容器内用 localhost 连不上（connection refused）。
+const host = '0.0.0.0';
 app.listen(port, host, () => {
   console.log(`Image Studio API running on http://${host}:${port}`);
   startTunnel(port);
