@@ -195,26 +195,6 @@ function App() {
     setSubmittingJob(true);
     const imageCount = Math.min(4, Math.max(1, Number(form.imageCount) || 1));
     const providerName = models.find((model) => model.id === form.providerId)?.name || (form.providerId === 'grok' ? 'Grok' : 'GPT');
-    const pendingBatch = Array.from({ length: imageCount }, (_, index) => ({
-      id: `local-pending-${index}`,
-      batchId: 'local-pending',
-      batchSize: imageCount,
-      batchIndex: index,
-      prompt: form.prompt,
-      providerId: form.providerId,
-      providerName,
-      generationType: form.generationType,
-      method: form.method,
-      ratio: form.ratio,
-      size: form.size,
-      inputImages: form.inputImages || [],
-      imageUrl: '',
-      status: 'queued',
-      progress: 2,
-      progressMessage: '正在提交生成任务',
-      error: ''
-    }));
-    setCurrentBatch(pendingBatch);
 
     try {
       const data = await api('/api/jobs', {
@@ -225,7 +205,6 @@ function App() {
       const created = data.jobs?.length ? data.jobs : [data.job].filter(Boolean);
       setCurrentBatch(created);
     } catch (error) {
-      setCurrentBatch(pendingBatch.map((job) => ({ ...job, status: 'failed', progressMessage: '任务提交失败', error: error.message })));
       setToast(error.message);
     } finally {
       setSubmittingJob(false);
@@ -250,7 +229,7 @@ function App() {
         body: settings
       });
       setSettings({ ...defaultSettings(), ...(data.settings || {}) });
-      setToast(settingsMode === 'admin' ? '默认模型配置已保存' : '接口配置已保存');
+      setToast(settingsMode === 'admin' ? '默认模型配置已保存' : '模型配置已保存');
       setSettingsOpen(false);
     } catch (error) {
       setToast(error.message);
@@ -462,7 +441,7 @@ function App() {
           {view === 'history'
             ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, () => setView('studio'))} onClick={() => runTopbarAction(() => setView('studio'))}>返回工作台</button>
             : <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openHistory)} onClick={() => runTopbarAction(openHistory)}>历史记录</button>}
-          <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>接口配置</button>
+          <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>模型配置</button>
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openAdminSettings)} onClick={() => runTopbarAction(openAdminSettings)}>默认模型配置</button> : null}
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUsersPanel)} onClick={() => runTopbarAction(openUsersPanel)}>用户列表</button> : null}
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openPasswordSettings)} onClick={() => runTopbarAction(openPasswordSettings)}>修改密码</button>
@@ -582,7 +561,7 @@ function App() {
       </section>
       )}
 
-      {toast ? <div className="floating-toast">{toast}</div> : null}
+      {toast ? createPortal(<div className="floating-toast">{toast}</div>, document.body) : null}
       {lightboxJob ? createPortal(<Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} />, document.body) : null}
     </main>
   );
@@ -789,11 +768,11 @@ function SettingsDialog({ inline = false, settings, setSettings, availableModels
       <div className={inline ? 'settings-modal inline-settings-panel' : 'settings-modal'} onClick={(event) => event.stopPropagation()}>
         <form className="settings-card" onSubmit={(event) => event.preventDefault()}>
           <div className="section-head">
-            <h2>{mode === 'admin' ? '默认模型配置' : '接口配置'}</h2>
+            <h2>{mode === 'admin' ? '默认模型配置' : '模型配置'}</h2>
             <span>{activeTab === 'gpt' ? 'GPT' : 'Grok'}</span>
           </div>
           <p className="muted compact">
-            {mode === 'admin' ? '这里配置所有用户默认使用的模型接口。用户自己的接口配置会优先于默认配置。' : '未填写时会使用管理员默认配置；默认配置不可用时，生成任务会提示你自行配置或通知管理员。'}
+            {mode === 'admin' ? '这里配置所有用户默认使用的模型服务。用户自己的模型配置会优先于默认配置。' : '未填写时会使用管理员默认配置；默认配置不可用时，生成任务会提示你自行配置或通知管理员。'}
           </p>
           <div className="segmented settings-tabs">
             <button className={activeTab === 'gpt' ? 'active' : ''} type="button" onClick={() => setActiveTab('gpt')}>GPT 配置</button>
@@ -928,27 +907,19 @@ function ImagePreview({ job, user, token, onOpen, onCopy }) {
 }
 
 function ImageCaption({ job, user, token = '', onCopy, onDelete, showOwner = true, showDelete = false }) {
-  function stopButtonInteraction(event) {
+  function handleActionClick(event, action) {
     event.stopPropagation();
+    action();
   }
 
   return (
-    <div className="caption" onPointerDown={stopButtonInteraction} onTouchStart={stopButtonInteraction}>
+    <div className="caption">
       {showOwner && user.role === 'admin' && job.username ? <p className="owner">账号：{job.username}</p> : null}
       <p>{job.prompt}</p>
       <div className="actions">
-        <button type="button" onPointerDown={stopButtonInteraction} onTouchStart={stopButtonInteraction} onClick={(event) => {
-          event.stopPropagation();
-          onCopy(job.prompt);
-        }}>复制提示词</button>
-        <button type="button" onPointerDown={stopButtonInteraction} onTouchStart={stopButtonInteraction} onClick={(event) => {
-          event.stopPropagation();
-          downloadImage(job, token);
-        }}>下载图片</button>
-        {showDelete ? <button className="danger-action" type="button" onPointerDown={stopButtonInteraction} onTouchStart={stopButtonInteraction} onClick={(event) => {
-          event.stopPropagation();
-          onDelete(job);
-        }}>删除记录</button> : null}
+        <button type="button" onClick={(event) => handleActionClick(event, () => onCopy(job.prompt))}>复制提示词</button>
+        <button type="button" onClick={(event) => handleActionClick(event, () => downloadImage(job, token))}>下载图片</button>
+        {showDelete ? <button className="danger-action" type="button" onClick={(event) => handleActionClick(event, () => onDelete(job))}>删除记录</button> : null}
       </div>
     </div>
   );
@@ -1088,8 +1059,8 @@ function HistoryItem({ group, user, token, onOpen, onCopy, onDelete }) {
 
 function failureHint(message) {
   const text = String(message || '生成失败，请稍后重试。');
-  if (/API Key|401|unauthorized/i.test(text)) return `${text} 请检查接口配置里的 API Key。`;
-  if (/model|模型/i.test(text)) return `${text} 请检查模型名称，或点击接口配置中的获取模型列表。`;
+  if (/API Key|401|unauthorized/i.test(text)) return `${text} 请检查模型配置里的 API Key。`;
+  if (/model|模型/i.test(text)) return `${text} 请检查模型名称，或点击模型配置中的获取模型列表。`;
   if (/size|resolution|分辨率/i.test(text)) return `${text} 可尝试选择自动分辨率。`;
   if (/timeout|network|fetch/i.test(text)) return `${text} 请检查接口地址或网络连通性。`;
   return text;
@@ -1097,14 +1068,20 @@ function failureHint(message) {
 
 function ConfirmDialog({ group, user, onCancel, onConfirm }) {
   const lead = group[0];
+  const description = user.role === 'admin'
+    ? '管理员删除后，这条历史记录会从系统中永久移除。'
+    : '';
+  const batchDescription = group.length > 1 ? `本条记录共 ${group.length} 张图片，将一并删除。` : '';
+  const confirmDescription = [description, batchDescription].filter(Boolean).join('');
+
   return (
     <div className="modal-backdrop confirm-backdrop" onClick={onCancel}>
       <div className="confirm-modal" onClick={(event) => event.stopPropagation()}>
         <div className="section-head">
           <h2>确认删除</h2>
-          <span>{user.role === 'admin' ? '永久删除' : '移出列表'}</span>
+          <span>{user.role === 'admin' ? '永久删除' : '删除记录'}</span>
         </div>
-        <p className="muted compact">{user.role === 'admin' ? '管理员删除后，这条历史记录会从系统中永久移除。' : '删除后，这条历史记录只会从你的列表中移除，管理员仍可查看。'}{group.length > 1 ? `本条记录共 ${group.length} 张图片，将一并删除。` : ''}</p>
+        {confirmDescription ? <p className="muted compact">{confirmDescription}</p> : null}
         <p className="confirm-prompt">{lead.prompt}</p>
         <div className="settings-actions confirm-actions">
           <button className="ghost" type="button" onClick={onCancel}>取消</button>

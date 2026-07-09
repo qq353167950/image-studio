@@ -42,6 +42,7 @@ const progressSteps = [
   { progress: 68, message: '正在细化画面细节和光影' },
   { progress: 86, message: '正在保存图片和生成历史记录' }
 ];
+const missingModelMessage = '请先完成模型配置，或联系管理员配置。';
 
 const store = loadStore();
 pruneExpiredJobs();
@@ -460,6 +461,9 @@ function createJobBatch(user, payload) {
     return { error: '最多上传 16 张参考图。' };
   }
 
+  const settingsError = validateJobModelSettings({ user, provider, generationType, method });
+  if (settingsError) return { error: settingsError };
+
   // 同一提示词可一次生成 1-4 张：每张一个独立任务，共享 batchId 便于前端按批展示。
   const imageCount = Math.min(4, Math.max(1, Number.parseInt(payload.imageCount, 10) || 1));
   const batchId = randomUUID();
@@ -755,6 +759,48 @@ function normalizeGenerationMethod(value) {
   return 'generations';
 }
 
+function validateJobModelSettings({ user, provider, generationType, method }) {
+  const settings = settingsForUser(user);
+  const configured = (value) => String(value || '').trim();
+
+  if (provider.provider === 'xai') {
+    return configured(settings.grokModel)
+      ? ''
+      : missingModelMessage;
+  }
+
+  if (provider.provider !== 'openai') return '';
+
+  if (generationType === 'image-to-image') {
+    const editModel = configured(settings.editModel) || configured(settings.generationModel);
+    return editModel ? '' : missingModelMessage;
+  }
+
+  if (method === 'responses') {
+    return configured(settings.responsesModel)
+      ? ''
+      : missingModelMessage;
+  }
+
+  if (method === 'chat') {
+    return configured(settings.chatModel)
+      ? ''
+      : missingModelMessage;
+  }
+
+  if (method === 'generations') {
+    return configured(settings.generationModel)
+      ? ''
+      : missingModelMessage;
+  }
+
+  return configured(settings.generationModel)
+    || configured(settings.responsesModel)
+    || configured(settings.chatModel)
+    ? ''
+    : missingModelMessage;
+}
+
 function resolvedValue(userValue, providerDefault, envValue) {
   return String(userValue || providerDefault || envValue || '').trim();
 }
@@ -959,7 +1005,7 @@ async function generateImage(job) {
 async function generateOpenAiImage(job, provider, settings) {
   const apiKey = resolvedValue(settings.apiKey, '', process.env[provider.apiKeyEnv]);
 
-  if (!apiKey) throw new Error('当前没有可用的 GPT API Key，请在接口配置中填写，或通知管理员配置默认 Key。');
+  if (!apiKey) throw new Error(missingModelMessage);
 
   if (job.generationType === 'image-to-image') {
     return generateOpenAiImageEdit(job, provider, settings, apiKey);
@@ -1164,7 +1210,7 @@ async function generateOpenAiChatImage(job, provider, settings, apiKey) {
 async function generateXaiImage(job, provider, settings) {
   const apiKey = resolvedValue(settings.grokApiKey, '', process.env[provider.apiKeyEnv]);
 
-  if (!apiKey) throw new Error('当前没有可用的 Grok API Key，请在接口配置中填写，或通知管理员配置默认 Key。');
+  if (!apiKey) throw new Error(missingModelMessage);
 
   if (job.generationType === 'image-to-image') {
     throw new Error('Grok 官方图片接口当前仅启用文生图。');
@@ -1315,11 +1361,11 @@ function resolveOpenAiTextMethod(job, provider, settings) {
   if (resolvedValue(settings.generationModel, provider.defaultGenerationModel, process.env.DEFAULT_GPT_IMAGE_MODEL)) return 'generations';
   if (resolvedValue(settings.responsesModel, provider.defaultResponsesModel, process.env.DEFAULT_GPT_RESPONSES_MODEL)) return 'responses';
   if (resolvedValue(settings.chatModel, provider.defaultChatModel, process.env.DEFAULT_GPT_CHAT_MODEL)) return 'chat';
-  throw new Error('当前没有可用的 GPT 生图模型，请在接口配置中填写模型，或通知管理员配置默认模型。');
+  throw new Error(missingModelMessage);
 }
 
 function assertModel(model, label) {
-  if (!model) throw new Error(`${label}不能为空，请在接口配置中填写模型，或通知管理员配置默认模型。`);
+  if (!model) throw new Error(missingModelMessage);
 }
 
 function isSizeError(message) {
