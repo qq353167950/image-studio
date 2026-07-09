@@ -1094,14 +1094,16 @@ button,
   position: fixed;
   left: 50%;
   top: 50%;
-  z-index: 1000;
+  z-index: 20000;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  padding: 12px 16px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 14px 18px;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
   color: #0f172a;
   background: #fff;
+  text-align: center;
   box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18);
 }
 
