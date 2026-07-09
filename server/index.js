@@ -126,7 +126,19 @@ app.put('/api/me/password', requireAuth, (req, res) => {
   req.user.passwordUpdatedAt = new Date().toISOString();
   saveStore();
 
-  res.json({ ok: true });
+  // 返回基于新密码指纹的 token：本设备无感续期，其他设备的旧 token 立即失效。
+  res.json({ ok: true, token: createToken(req.user) });
+});
+
+app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
+  const users = store.users.map((user) => ({
+    id: user.id,
+    username: user.username,
+    password: user.password,
+    role: user.role,
+    createdAt: user.createdAt || ''
+  }));
+  res.json({ users });
 });
 
 app.get('/api/settings', requireAuth, (req, res) => {
@@ -339,26 +351,32 @@ if (existsSync(distDir)) {
 }
 
 app.post('/api/jobs', requireAuth, (req, res) => {
-  const result = createJob(req.user, req.body ?? {});
+  const result = createJobBatch(req.user, req.body ?? {});
 
   if (result.error) {
     return res.status(400).json({ error: result.error });
   }
 
-  res.status(202).json({ job: publicJob(result.job, req.user) });
+  res.status(202).json({
+    job: publicJob(result.jobs[0], req.user),
+    jobs: result.jobs.map((job) => publicJob(job, req.user))
+  });
 });
 
 app.post('/api/generate', requireAuth, (req, res) => {
-  const result = createJob(req.user, req.body ?? {});
+  const result = createJobBatch(req.user, req.body ?? {});
 
   if (result.error) {
     return res.status(400).json({ error: result.error });
   }
 
-  res.status(202).json({ job: publicJob(result.job, req.user) });
+  res.status(202).json({
+    job: publicJob(result.jobs[0], req.user),
+    jobs: result.jobs.map((job) => publicJob(job, req.user))
+  });
 });
 
-function createJob(user, payload) {
+function createJobBatch(user, payload) {
   pruneExpiredJobs();
 
   const { prompt, providerId, ratio, style, inputImage } = payload;
@@ -411,36 +429,50 @@ function createJob(user, payload) {
     return { error: '最多上传 16 张参考图。' };
   }
 
-  const job = {
-    id: randomUUID(),
-    userId: user.id,
-    username: user.username,
-    prompt: prompt.trim().slice(0, 600),
-    providerId: provider.id,
-    providerName: provider.name,
-    generationType,
-    method: generationType === 'image-to-image' ? 'edits' : method,
-    ratio: ratio || '1:1',
-    size,
-    style: style || '',
-    inputImages: generationType === 'image-to-image' ? inputImages : [],
-    inputImage: generationType === 'image-to-image' ? inputImages[0]?.dataUrl || '' : '',
-    imageUrl: '',
-    status: 'queued',
-    progress: 4,
-    progressMessage: '任务已创建，等待开始生成',
-    error: '',
-    warning: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    completedAt: ''
-  };
+  // 同一提示词可一次生成 1-4 张：每张一个独立任务，共享 batchId 便于前端按批展示。
+  const imageCount = Math.min(4, Math.max(1, Number.parseInt(payload.imageCount, 10) || 1));
+  const batchId = randomUUID();
+  const createdAt = new Date().toISOString();
+  const jobs = [];
 
-  store.jobs.push(job);
+  for (let index = 0; index < imageCount; index += 1) {
+    const job = {
+      id: randomUUID(),
+      batchId,
+      batchSize: imageCount,
+      batchIndex: index,
+      userId: user.id,
+      username: user.username,
+      prompt: prompt.trim().slice(0, 600),
+      providerId: provider.id,
+      providerName: provider.name,
+      generationType,
+      method: generationType === 'image-to-image' ? 'edits' : method,
+      ratio: ratio || '1:1',
+      size,
+      style: style || '',
+      inputImages: generationType === 'image-to-image' ? inputImages : [],
+      inputImage: generationType === 'image-to-image' ? inputImages[0]?.dataUrl || '' : '',
+      imageUrl: '',
+      status: 'queued',
+      progress: 4,
+      progressMessage: '任务已创建，等待开始生成',
+      error: '',
+      warning: '',
+      createdAt,
+      updatedAt: createdAt,
+      completedAt: ''
+    };
+    jobs.push(job);
+    store.jobs.push(job);
+  }
+
   saveStore();
-  startGeneration(job.id);
+  for (const job of jobs) {
+    startGeneration(job.id);
+  }
 
-  return { job };
+  return { jobs };
 }
 
 function loadStore() {
@@ -704,8 +736,13 @@ function parseJsonBody(text) {
   }
 }
 
+function passwordFingerprint(user) {
+  // 密码指纹：绑定 token 与签发时的密码，密码修改后所有旧 token 自动失效。
+  return createHmac('sha256', tokenSecret).update(String(user.password || '')).digest('base64url').slice(0, 16);
+}
+
 function createToken(user) {
-  const payload = Buffer.from(JSON.stringify({ id: user.id, username: user.username })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ id: user.id, username: user.username, pwd: passwordFingerprint(user) })).toString('base64url');
   const signature = createHmac('sha256', tokenSecret).update(payload).digest('base64url');
   return `${payload}.${signature}`;
 }
@@ -718,7 +755,11 @@ function verifyToken(token) {
   if (signature !== expected) return null;
 
   const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-  return store.users.find((user) => user.id === parsed.id) || null;
+  const user = store.users.find((item) => item.id === parsed.id) || null;
+  if (!user) return null;
+  // 旧版 token 无 pwd 字段或密码已修改 → 一律视为失效，要求重新登录。
+  if (parsed.pwd !== passwordFingerprint(user)) return null;
+  return user;
 }
 
 function requireAuth(req, res, next) {
@@ -735,7 +776,7 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: '只有管理员可以修改默认模型配置。' });
+    return res.status(403).json({ error: '只有管理员可以执行该操作。' });
   }
 
   next();
@@ -775,6 +816,9 @@ function publicJob(job, user) {
 
   return {
     id: job.id,
+    batchId: job.batchId || job.id,
+    batchSize: job.batchSize || 1,
+    batchIndex: job.batchIndex || 0,
     prompt: job.prompt,
     providerId: job.providerId,
     providerName: job.providerName,

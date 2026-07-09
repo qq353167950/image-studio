@@ -26,11 +26,11 @@ function App() {
   const [user, setUser] = useState(null);
   const [models, setModels] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [currentJob, setCurrentJob] = useState(null);
-  const [activeJobId, setActiveJobId] = useState('');
+  const [currentBatch, setCurrentBatch] = useState(null);
+  const [activeBatchId, setActiveBatchId] = useState('');
   const [submittingJob, setSubmittingJob] = useState(false);
   const [lightboxJob, setLightboxJob] = useState(null);
-  const [deleteConfirmJob, setDeleteConfirmJob] = useState(null);
+  const [deleteConfirmGroup, setDeleteConfirmGroup] = useState(null);
   const [deletingJobId, setDeletingJobId] = useState('');
   const [toast, setToast] = useState('');
   const [referenceInfo, setReferenceInfo] = useState('');
@@ -42,6 +42,9 @@ function App() {
   const [providerMethods, setProviderMethods] = useState({ gpt: 'generations', grok: 'generations' });
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '' });
+  const [usersOpen, setUsersOpen] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [showAllPasswords, setShowAllPasswords] = useState(false);
   const [availableModels, setAvailableModels] = useState({ gpt: [], grok: [] });
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const touchActivationAtRef = useRef(0);
@@ -52,13 +55,14 @@ function App() {
     method: 'generations',
     ratio: '1:1',
     size: 'auto',
+    imageCount: 1,
     inputImages: []
   });
 
-  const activeJob = currentJob || jobs.find((job) => job.id === activeJobId) || null;
-  const latestCompleted = jobs.find((job) => job.status === 'completed') || null;
   const historyJobs = jobs.filter((job) => job.status === 'completed');
-  const generating = submittingJob || currentJob?.status === 'queued' || currentJob?.status === 'running';
+  const historyGroups = groupJobsByBatch(historyJobs);
+  const previewBatch = currentBatch || historyGroups.find((group) => batchKeyOf(group[0]) === activeBatchId) || null;
+  const generating = submittingJob || Boolean(currentBatch?.some((job) => job.status === 'queued' || job.status === 'running'));
   const referenceSummary = form.inputImages.length
     ? `已添加 ${form.inputImages.length} 张参考图，最多 ${maxReferenceImages} 张；总大小上限 ${formatBytes(maxReferenceTotalBytes)}，当前约 ${formatBytes(form.inputImages.reduce((total, image) => total + Number(image.bytes || dataUrlToBytes(image.dataUrl)), 0))}。`
     : '';
@@ -103,9 +107,9 @@ function App() {
         if (cancelled) return;
 
         setJobs((historyData.jobs || []).filter((job) => job.status === 'completed'));
-        const active = (activeData.jobs || [])[0];
-        if (active) {
-          setCurrentJob(active);
+        const activeGroups = groupJobsByBatch(activeData.jobs || []);
+        if (activeGroups.length) {
+          setCurrentBatch(activeGroups[0]);
         }
       } catch (error) {
         if (!cancelled) setToast(error.message);
@@ -126,69 +130,45 @@ function App() {
   }, [toast]);
 
   useEffect(() => {
-    if (!token || !currentJob?.id || currentJob.status === 'completed' || currentJob.status === 'failed') return;
+    const pendingIds = (currentBatch || []).filter((job) => job.status === 'queued' || job.status === 'running').map((job) => job.id);
+    if (!token || !pendingIds.length) return;
 
-    const source = new EventSource(`/api/jobs/${currentJob.id}/events?token=${encodeURIComponent(token)}`);
-    let closed = false;
-    let lastEventAt = Date.now();
-    let fallbackTimer = null;
+    // 批量任务统一用轮询跟踪进度：多张图并行生成时比多路 SSE 更简单可靠。
+    let cancelled = false;
 
-    async function pollCurrentJob() {
+    async function pollBatch() {
       try {
-        const data = await api(`/api/jobs/${currentJob.id}`, { token });
-        setCurrentJob(data.job);
-        if (data.job.status === 'completed') await refreshHistory();
-      } catch (error) {
-        setToast(error.message);
+        const updates = await Promise.all(pendingIds.map((id) => api(`/api/jobs/${id}`, { token }).then((data) => data.job).catch(() => null)));
+        if (cancelled) return;
+
+        let anyCompleted = false;
+        setCurrentBatch((current) => {
+          if (!current) return current;
+          return current.map((job) => {
+            const updated = updates.find((item) => item?.id === job.id);
+            if (updated && updated.status === 'completed' && job.status !== 'completed') anyCompleted = true;
+            return updated || job;
+          });
+        });
+        if (anyCompleted) await refreshHistory();
+      } catch {
+        // 单次轮询失败不打断跟踪，下一轮继续。
       }
     }
 
-    function startFallbackPolling() {
-      if (fallbackTimer) return;
-      fallbackTimer = setInterval(() => {
-        if (closed) return;
-        pollCurrentJob();
-      }, 1600);
-    }
-
-    const staleTimer = setInterval(() => {
-      if (Date.now() - lastEventAt > 3500) startFallbackPolling();
-    }, 1200);
-
-    source.onmessage = async (event) => {
-      lastEventAt = Date.now();
-      const job = JSON.parse(event.data);
-      setCurrentJob(job);
-
-      if (job.status === 'completed') {
-        closed = true;
-        source.close();
-        await refreshHistory();
-      }
-
-      if (job.status === 'failed') {
-        closed = true;
-        source.close();
-      }
-    };
-
-    source.onerror = () => {
-      source.close();
-      startFallbackPolling();
-    };
+    const timer = setInterval(pollBatch, 1600);
+    pollBatch();
 
     return () => {
-      closed = true;
-      source.close();
-      clearInterval(staleTimer);
-      if (fallbackTimer) clearInterval(fallbackTimer);
+      cancelled = true;
+      clearInterval(timer);
     };
-  }, [token, currentJob?.id, currentJob?.status]);
+  }, [token, (currentBatch || []).map((job) => `${job.id}:${job.status}`).join('|')]);
 
   useEffect(() => {
-    document.body.classList.toggle('modal-open', Boolean(lightboxJob) || Boolean(deleteConfirmJob));
+    document.body.classList.toggle('modal-open', Boolean(lightboxJob) || Boolean(deleteConfirmGroup));
     return () => document.body.classList.remove('modal-open');
-  }, [lightboxJob, deleteConfirmJob]);
+  }, [lightboxJob, deleteConfirmGroup]);
 
   async function refreshHistory() {
     const data = await api('/api/jobs', { token });
@@ -217,7 +197,10 @@ function App() {
     setToken('');
     setUser(null);
     setJobs([]);
-    setActiveJobId('');
+    setActiveBatchId('');
+    setCurrentBatch(null);
+    setUsersOpen(false);
+    setAdminUsers([]);
   }
 
   async function handleGenerate(event) {
@@ -228,11 +211,16 @@ function App() {
       return;
     }
     setSubmittingJob(true);
-    const pendingJob = {
-      id: 'local-pending',
+    const imageCount = Math.min(4, Math.max(1, Number(form.imageCount) || 1));
+    const providerName = models.find((model) => model.id === form.providerId)?.name || (form.providerId === 'grok' ? 'Grok' : 'GPT');
+    const pendingBatch = Array.from({ length: imageCount }, (_, index) => ({
+      id: `local-pending-${index}`,
+      batchId: 'local-pending',
+      batchSize: imageCount,
+      batchIndex: index,
       prompt: form.prompt,
       providerId: form.providerId,
-      providerName: models.find((model) => model.id === form.providerId)?.name || (form.providerId === 'grok' ? 'Grok' : 'GPT'),
+      providerName,
       generationType: form.generationType,
       method: form.method,
       ratio: form.ratio,
@@ -243,20 +231,20 @@ function App() {
       progress: 2,
       progressMessage: '正在提交生成任务',
       error: ''
-    };
-    setCurrentJob(pendingJob);
-    setActiveJobId('');
+    }));
+    setCurrentBatch(pendingBatch);
+    setActiveBatchId('');
 
     try {
       const data = await api('/api/jobs', {
         method: 'POST',
         token,
-        body: form
+        body: { ...form, imageCount }
       });
-      setActiveJobId(data.job.id);
-      setCurrentJob(data.job);
+      const created = data.jobs?.length ? data.jobs : [data.job].filter(Boolean);
+      setCurrentBatch(created);
     } catch (error) {
-      setCurrentJob({ ...pendingJob, status: 'failed', progressMessage: '任务提交失败', error: error.message });
+      setCurrentBatch(pendingBatch.map((job) => ({ ...job, status: 'failed', progressMessage: '任务提交失败', error: error.message })));
       setToast(error.message);
     } finally {
       setSubmittingJob(false);
@@ -309,6 +297,7 @@ function App() {
   async function openUserSettings() {
     setSettingsMode('user');
     setPasswordOpen(false);
+    setUsersOpen(false);
     setSettingsOpen(true);
     try {
       const data = await api('/api/settings', { token });
@@ -321,10 +310,24 @@ function App() {
   async function openAdminSettings() {
     setSettingsMode('admin');
     setPasswordOpen(false);
+    setUsersOpen(false);
     setSettingsOpen(true);
     try {
       const data = await api('/api/admin/settings', { token });
       setSettings({ ...defaultSettings(), ...(data.settings || {}) });
+    } catch (error) {
+      setToast(error.message);
+    }
+  }
+
+  async function openUsersPanel() {
+    setSettingsOpen(false);
+    setPasswordOpen(false);
+    setShowAllPasswords(false);
+    setUsersOpen(true);
+    try {
+      const data = await api('/api/admin/users', { token });
+      setAdminUsers(data.users || []);
     } catch (error) {
       setToast(error.message);
     }
@@ -344,6 +347,7 @@ function App() {
 
   function openPasswordSettings() {
     setSettingsOpen(false);
+    setUsersOpen(false);
     setPasswordOpen(true);
   }
 
@@ -352,14 +356,19 @@ function App() {
     setToast('');
 
     try {
-      await api('/api/me/password', {
+      const data = await api('/api/me/password', {
         method: 'PUT',
         token,
         body: passwordForm
       });
+      // 服务端改密后旧 token 全部失效，用返回的新 token 续期当前设备。
+      if (data.token) {
+        localStorage.setItem('image-studio-token', data.token);
+        setToken(data.token);
+      }
       setPasswordForm({ currentPassword: '', newPassword: '' });
       setPasswordOpen(false);
-      setToast('密码已修改');
+      setToast('密码已修改，其他设备需要重新登录');
     } catch (error) {
       setToast(error.message);
     }
@@ -421,16 +430,19 @@ function App() {
     setToast('提示词已复制');
   }
 
-  async function handleDeleteJob(job) {
+  async function handleDeleteGroup(group) {
     const previousJobs = jobs;
-    setDeleteConfirmJob(null);
-    setDeletingJobId(job.id);
-    setJobs((current) => current.filter((item) => item.id !== job.id));
+    const groupIds = new Set(group.map((job) => job.id));
+    const groupKey = batchKeyOf(group[0]);
+    setDeleteConfirmGroup(null);
+    setDeletingJobId(group[0].id);
+    setJobs((current) => current.filter((item) => !groupIds.has(item.id)));
 
     try {
-      await api(`/api/jobs/${job.id}`, { method: 'DELETE', token });
-      if (activeJobId === job.id) setActiveJobId('');
-      if (currentJob?.id === job.id) setCurrentJob(null);
+      // 删除整批：一批多张时逐条调用删除接口。
+      await Promise.all(group.map((job) => api(`/api/jobs/${job.id}`, { method: 'DELETE', token })));
+      if (activeBatchId === groupKey) setActiveBatchId('');
+      if (currentBatch && batchKeyOf(currentBatch[0]) === groupKey) setCurrentBatch(null);
       setToast(user.role === 'admin' ? '历史记录已删除' : '历史记录已从你的列表移除');
     } catch (error) {
       setJobs(previousJobs);
@@ -447,7 +459,7 @@ function App() {
           <div>
             <p className="kicker">AI Image Platform</p>
             <h1>{authMode === 'login' ? '登录' : '注册'}</h1>
-            <p className="muted">账号 5-15 位，只能使用英文字母；密码 6-20 位，支持英文、数字和常见特殊符号。管理员初始密码为 admin123。</p>
+            <p className="muted">账号 5-15 位，只能使用英文字母；密码 6-20 位，支持英文、数字和常见特殊符号。</p>
           </div>
           <form className="login-form" onSubmit={handleLogin}>
             <label>
@@ -483,6 +495,7 @@ function App() {
           <span>{user.role === 'admin' ? '管理员' : '用户'} · {user.username}</span>
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>接口配置</button>
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openAdminSettings)} onClick={() => runTopbarAction(openAdminSettings)}>默认模型配置</button> : null}
+          {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUsersPanel)} onClick={() => runTopbarAction(openUsersPanel)}>用户列表</button> : null}
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openPasswordSettings)} onClick={() => runTopbarAction(openPasswordSettings)}>修改密码</button>
           <button type="button" onClick={handleLogout}>退出</button>
         </div>
@@ -510,6 +523,15 @@ function App() {
           setForm={setPasswordForm}
           onSubmit={handleChangePassword}
           onClose={() => setPasswordOpen(false)}
+        />
+      ) : null}
+
+      {usersOpen ? (
+        <UsersPanel
+          users={adminUsers}
+          showAll={showAllPasswords}
+          onToggleAll={() => setShowAllPasswords((current) => !current)}
+          onClose={() => setUsersOpen(false)}
         />
       ) : null}
 
@@ -547,6 +569,12 @@ function App() {
                 {sizeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
+            <label className="field">
+              <span>生成数量</span>
+              <select value={form.imageCount} onChange={(event) => setForm({ ...form, imageCount: Number(event.target.value) })}>
+                {[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count} 张</option>)}
+              </select>
+            </label>
           </div>
 
           {form.generationType === 'image-to-image' ? (
@@ -568,30 +596,125 @@ function App() {
         <section className="card preview-card">
           <div className="section-head">
             <h2>预览区</h2>
-            <span>{activeJob?.status === 'completed' ? '已完成' : activeJob?.status === 'failed' ? '生成失败' : activeJob ? '生成中' : '待生成'}</span>
+            <span>{batchStatusLabel(previewBatch)}</span>
           </div>
-          {activeJob?.status === 'failed' ? null : <JobProgress job={activeJob} />}
-          <ImagePreview job={activeJob} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} />
+          <BatchProgress batch={previewBatch} />
+          <BatchPreview batch={previewBatch} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} />
         </section>
       </section>
 
       <section className="card history-card">
           <div className="section-head">
             <h2>{user.role === 'admin' ? '全部历史记录' : '我的历史记录'}</h2>
-          <span>{historyJobs.length} 条</span>
+          <span>{historyGroups.length} 条</span>
         </div>
         {deletingJobId ? <p className="inline-loading"><span /> 正在删除历史记录</p> : null}
         <div className="history-list">
-          {historyJobs.length ? historyJobs.map((job) => (
-            <HistoryItem key={job.id} job={job} user={user} token={token} onSelect={setActiveJobId} onOpen={setLightboxJob} onCopy={copyPrompt} onDelete={setDeleteConfirmJob} />
+          {historyGroups.length ? historyGroups.map((group) => (
+            <HistoryItem key={batchKeyOf(group[0])} group={group} user={user} token={token} onSelect={setActiveBatchId} onOpen={setLightboxJob} onCopy={copyPrompt} onDelete={setDeleteConfirmGroup} />
           )) : <p className="muted">暂无生成记录</p>}
         </div>
       </section>
 
       {toast ? <div className="floating-toast">{toast}</div> : null}
       {lightboxJob ? createPortal(<Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} />, document.body) : null}
-      {deleteConfirmJob ? createPortal(<ConfirmDialog job={deleteConfirmJob} user={user} onCancel={() => setDeleteConfirmJob(null)} onConfirm={() => handleDeleteJob(deleteConfirmJob)} />, document.body) : null}
+      {deleteConfirmGroup ? createPortal(<ConfirmDialog group={deleteConfirmGroup} user={user} onCancel={() => setDeleteConfirmGroup(null)} onConfirm={() => handleDeleteGroup(deleteConfirmGroup)} />, document.body) : null}
     </main>
+  );
+}
+
+function batchKeyOf(job) {
+  return job?.batchId || job?.id || '';
+}
+
+function groupJobsByBatch(list) {
+  // 按 batchId 分组并保持任务顺序，兼容无 batchId 的旧记录（单张一组）。
+  const groups = new Map();
+  for (const job of list) {
+    const key = batchKeyOf(job);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(job);
+  }
+  return Array.from(groups.values()).map((group) => [...group].sort((a, b) => (a.batchIndex || 0) - (b.batchIndex || 0)));
+}
+
+function batchStatusLabel(batch) {
+  if (!batch?.length) return '待生成';
+  const completed = batch.filter((job) => job.status === 'completed').length;
+  const failed = batch.filter((job) => job.status === 'failed').length;
+  if (completed + failed === batch.length) {
+    if (batch.length === 1) return failed ? '生成失败' : '已完成';
+    return failed ? `完成 ${completed}/${batch.length}（${failed} 张失败）` : '已完成';
+  }
+  return batch.length === 1 ? '生成中' : `生成中 ${completed}/${batch.length}`;
+}
+
+function BatchProgress({ batch }) {
+  if (!batch?.length) {
+    return <div className="progress-panel idle">提交任务后，这里会显示实时进度。</div>;
+  }
+
+  const pending = batch.filter((job) => job.status === 'queued' || job.status === 'running');
+  // 全部终态后不再占位显示进度条；失败详情由预览网格内联展示。
+  if (!pending.length) return null;
+
+  // 多张并行时展示整体进度（取各任务进度均值）。
+  const overall = Math.round(batch.reduce((total, job) => total + (job.status === 'completed' ? 100 : job.progress || 0), 0) / batch.length);
+  const leader = pending[0];
+
+  return (
+    <div className="progress-panel saving-panel">
+      <div className="progress-copy">
+        <strong>{leader.progressMessage}<span className="saving-dots" aria-hidden="true"><i /> <i /> <i /></span></strong>
+        <span>{leader.providerName} · {leader.generationType === 'image-to-image' ? '图生图' : '文生图'}{batch.length > 1 ? ` · 共 ${batch.length} 张` : ''}</span>
+      </div>
+      {overall >= 86 ? <p className="saving-hint">图片已经进入最后处理阶段，正在写入历史记录和生成可预览链接。</p> : null}
+      <div className="progress-track active-save">
+        <div className="progress-fill" style={{ width: `${overall}%` }} />
+      </div>
+      <div className="progress-meta">
+        <span>{batch.length > 1 ? `${batch.filter((job) => job.status === 'completed').length}/${batch.length} 完成` : leader.status}</span>
+        <span>{overall}%</span>
+      </div>
+    </div>
+  );
+}
+
+function BatchPreview({ batch, user, token, onOpen, onCopy }) {
+  if (!batch?.length) {
+    return <div className="empty-preview">完成后的图片会出现在这里</div>;
+  }
+
+  if (batch.length === 1) {
+    return <ImagePreview job={batch[0]} user={user} token={token} onOpen={onOpen} onCopy={onCopy} />;
+  }
+
+  const anyCompleted = batch.some((job) => job.status === 'completed' && job.imageUrl);
+  const allFailed = batch.every((job) => job.status === 'failed');
+
+  if (allFailed) {
+    return <div className="empty-preview error-preview">生成失败：{failureHint(batch[0].error || '生成失败，请稍后重试。')}</div>;
+  }
+
+  return (
+    <article className="image-result">
+      <div className="batch-grid">
+        {batch.map((job, index) => (
+          <div className="batch-cell" key={job.id}>
+            {job.status === 'completed' && job.imageUrl ? (
+              <button className="image-button" type="button" onClick={() => onOpen(job)}>
+                <img src={imageSrc(job.imageUrl, token)} alt={`${job.prompt}（第 ${index + 1} 张）`} />
+              </button>
+            ) : job.status === 'failed' ? (
+              <div className="batch-placeholder failed">第 {index + 1} 张失败{job.error ? `：${failureHint(job.error)}` : ''}</div>
+            ) : (
+              <div className="batch-placeholder">第 {index + 1} 张 · {job.progress || 0}%</div>
+            )}
+          </div>
+        ))}
+      </div>
+      {anyCompleted ? <ImageCaption job={batch.find((job) => job.status === 'completed' && job.imageUrl) || batch[0]} user={user} token={token} onCopy={onCopy} /> : null}
+    </article>
   );
 }
 
@@ -866,28 +989,44 @@ function ImageCaption({ job, user, token = '', onCopy, onDelete, showOwner = tru
   );
 }
 
-function HistoryItem({ job, user, token, onSelect, onOpen, onCopy, onDelete }) {
+function HistoryItem({ group, user, token, onSelect, onOpen, onCopy, onDelete }) {
+  const lead = group[0];
+  const completedJobs = group.filter((job) => job.status === 'completed' && job.imageUrl);
+
   function handleSelect(event) {
     if (event.target.closest('button, a')) return;
-    onSelect(job.id);
+    onSelect(batchKeyOf(lead));
   }
 
   return (
     <article className="history-item">
       <button className="thumb" type="button" onClick={(event) => {
         event.stopPropagation();
-        if (job.imageUrl) onOpen(job);
+        if (lead.imageUrl) onOpen(lead);
       }}>
-        {job.imageUrl ? <img src={imageSrc(job.imageUrl, token)} alt={job.prompt} /> : <span>{job.progress}%</span>}
+        {lead.imageUrl ? <img src={imageSrc(lead.imageUrl, token)} alt={lead.prompt} /> : <span>{lead.progress}%</span>}
+        {group.length > 1 ? <span className="batch-badge">{completedJobs.length}张</span> : null}
       </button>
       <div className="history-main" onClick={handleSelect}>
         <div className="history-title">
-          <strong>{job.providerName} · {job.generationType === 'image-to-image' ? '图生图' : '文生图'}</strong>
-          <span className={`status ${job.status}`}>{job.status}</span>
+          <strong>{lead.providerName} · {lead.generationType === 'image-to-image' ? '图生图' : '文生图'}{group.length > 1 ? ` · ${completedJobs.length} 张` : ''}</strong>
+          <span className={`status ${lead.status}`}>{lead.status}</span>
         </div>
-        {user.role === 'admin' && job.username ? <p className="owner">账号：{job.username}</p> : null}
-        {job.inputImages?.length ? <ReferenceGrid images={job.inputImages} token={token} readonly onOpen={(image) => onOpen({ imageUrl: image.dataUrl, prompt: image.name || '参考图', generationType: 'image-to-image', providerName: '参考图', referencePreview: true })} /> : null}
-        {job.imageUrl ? <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDelete={onDelete} showOwner={false} showDelete /> : null}
+        {user.role === 'admin' && lead.username ? <p className="owner">账号：{lead.username}</p> : null}
+        {group.length > 1 ? (
+          <div className="history-batch-thumbs">
+            {completedJobs.map((job, index) => (
+              <button className="history-batch-thumb" key={job.id} type="button" onClick={(event) => {
+                event.stopPropagation();
+                onOpen(job);
+              }}>
+                <img src={imageSrc(job.imageUrl, token)} alt={`${job.prompt}（第 ${index + 1} 张）`} />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {lead.inputImages?.length ? <ReferenceGrid images={lead.inputImages} token={token} readonly onOpen={(image) => onOpen({ imageUrl: image.dataUrl, prompt: image.name || '参考图', generationType: 'image-to-image', providerName: '参考图', referencePreview: true })} /> : null}
+        {lead.imageUrl ? <ImageCaption job={lead} user={user} token={token} onCopy={onCopy} onDelete={() => onDelete(group)} showOwner={false} showDelete /> : null}
       </div>
     </article>
   );
@@ -902,7 +1041,8 @@ function failureHint(message) {
   return text;
 }
 
-function ConfirmDialog({ job, user, onCancel, onConfirm }) {
+function ConfirmDialog({ group, user, onCancel, onConfirm }) {
+  const lead = group[0];
   return (
     <div className="modal-backdrop confirm-backdrop" onClick={onCancel}>
       <div className="confirm-modal" onClick={(event) => event.stopPropagation()}>
@@ -910,14 +1050,53 @@ function ConfirmDialog({ job, user, onCancel, onConfirm }) {
           <h2>确认删除</h2>
           <span>{user.role === 'admin' ? '永久删除' : '移出列表'}</span>
         </div>
-        <p className="muted compact">{user.role === 'admin' ? '管理员删除后，这条历史记录会从系统中永久移除。' : '删除后，这条历史记录只会从你的列表中移除，管理员仍可查看。'}</p>
-        <p className="confirm-prompt">{job.prompt}</p>
+        <p className="muted compact">{user.role === 'admin' ? '管理员删除后，这条历史记录会从系统中永久移除。' : '删除后，这条历史记录只会从你的列表中移除，管理员仍可查看。'}{group.length > 1 ? `本条记录共 ${group.length} 张图片，将一并删除。` : ''}</p>
+        <p className="confirm-prompt">{lead.prompt}</p>
         <div className="settings-actions confirm-actions">
           <button className="ghost" type="button" onClick={onCancel}>取消</button>
           <button className="primary danger-confirm" type="button" onClick={onConfirm}>确认删除</button>
         </div>
       </div>
     </div>
+  );
+}
+
+function UsersPanel({ users, showAll, onToggleAll, onClose }) {
+  return (
+    <section className="card inline-panel-wrap">
+      <div className="settings-modal inline-settings-panel">
+        <div className="settings-card">
+          <div className="section-head">
+            <h2>用户列表</h2>
+            <span>{users.length} 个账号</span>
+          </div>
+          <p className="muted compact">这里显示所有注册账号及其密码，密码默认隐藏，点击右侧按钮可一键全部显示或隐藏。</p>
+          <div className="users-toolbar">
+            <button type="button" onClick={onToggleAll}>{showAll ? '一键隐藏密码' : '一键显示密码'}</button>
+          </div>
+          <div className="users-table">
+            <div className="users-row users-head">
+              <span>账号</span>
+              <span>密码</span>
+              <span>角色</span>
+              <span>注册时间</span>
+            </div>
+            {users.map((item) => (
+              <div className="users-row" key={item.id}>
+                <span className="users-name">{item.username}</span>
+                <span className="users-password">{showAll ? item.password : '••••••••'}</span>
+                <span>{item.role === 'admin' ? '管理员' : '用户'}</span>
+                <span className="users-date">{item.createdAt ? item.createdAt.slice(0, 10) : '—'}</span>
+              </div>
+            ))}
+            {!users.length ? <p className="muted">暂无注册账号</p> : null}
+          </div>
+          <div className="settings-actions">
+            <button className="ghost" type="button" onClick={onClose}>关闭</button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

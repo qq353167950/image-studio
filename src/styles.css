@@ -726,6 +726,131 @@ button,
   gap: 14px;
 }
 
+.batch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.batch-cell {
+  display: grid;
+}
+
+.batch-cell .image-button img {
+  height: 100%;
+  max-height: 320px;
+  object-fit: cover;
+}
+
+.batch-placeholder {
+  display: grid;
+  min-height: 200px;
+  place-items: center;
+  padding: 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 20px;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.batch-placeholder.failed {
+  border-color: #fecdd3;
+  color: #be123c;
+  background: #fff1f2;
+}
+
+.batch-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.history-batch-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-batch-thumb {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.history-batch-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.users-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.users-toolbar button {
+  min-height: 36px;
+  padding: 0 14px;
+  color: #0f172a;
+  background: #f1f5f9;
+  font-size: 13px;
+}
+
+.users-table {
+  display: grid;
+  gap: 6px;
+}
+
+.users-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(140px, 1.2fr) 80px 110px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  color: #475569;
+  font-size: 14px;
+}
+
+.users-row.users-head {
+  border: 0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.users-name {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.users-password {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.4px;
+  word-break: break-all;
+}
+
+.users-date {
+  font-size: 13px;
+}
+
 .image-button,
 .thumb {
   padding: 0;
@@ -865,6 +990,7 @@ button,
 }
 
 .thumb {
+  position: relative;
   display: grid;
   width: 128px;
   height: 128px;
@@ -1016,6 +1142,19 @@ button,
 }
 
 @media (max-width: 640px) {
+  .batch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .users-row {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 4px;
+  }
+
+  .users-row.users-head {
+    display: none;
+  }
+
   .app-shell {
     width: min(100% - 20px, 1320px);
     padding-top: 18px;
