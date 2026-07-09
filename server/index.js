@@ -241,6 +241,37 @@ app.get('/api/jobs', requireAuth, (req, res) => {
   res.json({ jobs });
 });
 
+app.get('/api/history', requireAuth, (req, res) => {
+  // 历史记录按批次分组分页：一批多张图算一条记录，服务端切页避免前端一次性加载全量数据。
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(20, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 10));
+
+  const completed = visibleJobs(req.user)
+    .filter((job) => job.status === 'completed')
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const groupIndex = new Map();
+  const groups = [];
+  for (const job of completed) {
+    const key = job.batchId || job.id;
+    if (!groupIndex.has(key)) {
+      groupIndex.set(key, groups.length);
+      groups.push([]);
+    }
+    groups[groupIndex.get(key)].push(job);
+  }
+
+  const total = groups.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageGroups = groups
+    .slice((page - 1) * pageSize, page * pageSize)
+    .map((group) => group
+      .sort((a, b) => (a.batchIndex || 0) - (b.batchIndex || 0))
+      .map((job) => publicJob(job, req.user)));
+
+  res.json({ groups: pageGroups, total, page, pageSize, totalPages });
+});
+
 app.get('/api/jobs/active', requireAuth, (req, res) => {
   const jobs = visibleJobs(req.user)
     .filter((job) => job.status === 'queued' || job.status === 'running')

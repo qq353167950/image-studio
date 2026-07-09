@@ -945,6 +945,38 @@ button,
   margin-top: 20px;
 }
 
+.history-page {
+  margin-top: 0;
+  padding: 22px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.pagination button {
+  min-height: 38px;
+  padding: 0 16px;
+  color: #0f172a;
+  background: #f1f5f9;
+  font-size: 13px;
+}
+
+.pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .inline-loading {
   display: inline-flex;
   align-items: center;

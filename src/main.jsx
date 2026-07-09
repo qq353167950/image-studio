@@ -25,13 +25,10 @@ function App() {
   const [token, setToken] = useState(() => localStorage.getItem('image-studio-token') || '');
   const [user, setUser] = useState(null);
   const [models, setModels] = useState([]);
-  const [jobs, setJobs] = useState([]);
+  const [view, setView] = useState('studio');
   const [currentBatch, setCurrentBatch] = useState(null);
-  const [activeBatchId, setActiveBatchId] = useState('');
   const [submittingJob, setSubmittingJob] = useState(false);
   const [lightboxJob, setLightboxJob] = useState(null);
-  const [deleteConfirmGroup, setDeleteConfirmGroup] = useState(null);
-  const [deletingJobId, setDeletingJobId] = useState('');
   const [toast, setToast] = useState('');
   const [referenceInfo, setReferenceInfo] = useState('');
   const [authMode, setAuthMode] = useState('login');
@@ -59,9 +56,7 @@ function App() {
     inputImages: []
   });
 
-  const historyJobs = jobs.filter((job) => job.status === 'completed');
-  const historyGroups = groupJobsByBatch(historyJobs);
-  const previewBatch = currentBatch || historyGroups.find((group) => batchKeyOf(group[0]) === activeBatchId) || null;
+  const previewBatch = currentBatch;
   const generating = submittingJob || Boolean(currentBatch?.some((job) => job.status === 'queued' || job.status === 'running'));
   const referenceSummary = form.inputImages.length
     ? `已添加 ${form.inputImages.length} 张参考图，最多 ${maxReferenceImages} 张；总大小上限 ${formatBytes(maxReferenceTotalBytes)}，当前约 ${formatBytes(form.inputImages.reduce((total, image) => total + Number(image.bytes || dataUrlToBytes(image.dataUrl)), 0))}。`
@@ -98,15 +93,11 @@ function App() {
 
     let cancelled = false;
 
-    async function loadInitialJobs() {
+    async function loadActiveBatch() {
       try {
-        const [historyData, activeData] = await Promise.all([
-          api('/api/jobs', { token }),
-          api('/api/jobs/active', { token })
-        ]);
+        const activeData = await api('/api/jobs/active', { token });
         if (cancelled) return;
 
-        setJobs((historyData.jobs || []).filter((job) => job.status === 'completed'));
         const activeGroups = groupJobsByBatch(activeData.jobs || []);
         if (activeGroups.length) {
           setCurrentBatch(activeGroups[0]);
@@ -116,7 +107,7 @@ function App() {
       }
     }
 
-    loadInitialJobs();
+    loadActiveBatch();
 
     return () => {
       cancelled = true;
@@ -141,16 +132,13 @@ function App() {
         const updates = await Promise.all(pendingIds.map((id) => api(`/api/jobs/${id}`, { token }).then((data) => data.job).catch(() => null)));
         if (cancelled) return;
 
-        let anyCompleted = false;
         setCurrentBatch((current) => {
           if (!current) return current;
           return current.map((job) => {
             const updated = updates.find((item) => item?.id === job.id);
-            if (updated && updated.status === 'completed' && job.status !== 'completed') anyCompleted = true;
             return updated || job;
           });
         });
-        if (anyCompleted) await refreshHistory();
       } catch {
         // 单次轮询失败不打断跟踪，下一轮继续。
       }
@@ -166,13 +154,18 @@ function App() {
   }, [token, (currentBatch || []).map((job) => `${job.id}:${job.status}`).join('|')]);
 
   useEffect(() => {
-    document.body.classList.toggle('modal-open', Boolean(lightboxJob) || Boolean(deleteConfirmGroup));
+    document.body.classList.toggle('modal-open', Boolean(lightboxJob));
     return () => document.body.classList.remove('modal-open');
-  }, [lightboxJob, deleteConfirmGroup]);
+  }, [lightboxJob]);
 
-  async function refreshHistory() {
-    const data = await api('/api/jobs', { token });
-    setJobs((data.jobs || []).filter((job) => job.status === 'completed'));
+  function handleLogout() {
+    localStorage.removeItem('image-studio-token');
+    setToken('');
+    setUser(null);
+    setView('studio');
+    setCurrentBatch(null);
+    setUsersOpen(false);
+    setAdminUsers([]);
   }
 
   async function handleLogin(event) {
@@ -190,17 +183,6 @@ function App() {
     } catch (error) {
       setToast(error.message);
     }
-  }
-
-  function handleLogout() {
-    localStorage.removeItem('image-studio-token');
-    setToken('');
-    setUser(null);
-    setJobs([]);
-    setActiveBatchId('');
-    setCurrentBatch(null);
-    setUsersOpen(false);
-    setAdminUsers([]);
   }
 
   async function handleGenerate(event) {
@@ -233,7 +215,6 @@ function App() {
       error: ''
     }));
     setCurrentBatch(pendingBatch);
-    setActiveBatchId('');
 
     try {
       const data = await api('/api/jobs', {
@@ -430,26 +411,11 @@ function App() {
     setToast('提示词已复制');
   }
 
-  async function handleDeleteGroup(group) {
-    const previousJobs = jobs;
-    const groupIds = new Set(group.map((job) => job.id));
-    const groupKey = batchKeyOf(group[0]);
-    setDeleteConfirmGroup(null);
-    setDeletingJobId(group[0].id);
-    setJobs((current) => current.filter((item) => !groupIds.has(item.id)));
-
-    try {
-      // 删除整批：一批多张时逐条调用删除接口。
-      await Promise.all(group.map((job) => api(`/api/jobs/${job.id}`, { method: 'DELETE', token })));
-      if (activeBatchId === groupKey) setActiveBatchId('');
-      if (currentBatch && batchKeyOf(currentBatch[0]) === groupKey) setCurrentBatch(null);
-      setToast(user.role === 'admin' ? '历史记录已删除' : '历史记录已从你的列表移除');
-    } catch (error) {
-      setJobs(previousJobs);
-      setToast(error.message);
-    } finally {
-      setDeletingJobId('');
-    }
+  function openHistory() {
+    setSettingsOpen(false);
+    setPasswordOpen(false);
+    setUsersOpen(false);
+    setView('history');
   }
 
   if (!user) {
@@ -493,6 +459,9 @@ function App() {
         </div>
         <div className="account-pill">
           <span>{user.role === 'admin' ? '管理员' : '用户'} · {user.username}</span>
+          {view === 'history'
+            ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, () => setView('studio'))} onClick={() => runTopbarAction(() => setView('studio'))}>返回工作台</button>
+            : <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openHistory)} onClick={() => runTopbarAction(openHistory)}>历史记录</button>}
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>接口配置</button>
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openAdminSettings)} onClick={() => runTopbarAction(openAdminSettings)}>默认模型配置</button> : null}
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUsersPanel)} onClick={() => runTopbarAction(openUsersPanel)}>用户列表</button> : null}
@@ -535,6 +504,15 @@ function App() {
         />
       ) : null}
 
+      {view === 'history' ? (
+        <HistoryPage
+          user={user}
+          token={token}
+          onOpen={setLightboxJob}
+          onCopy={copyPrompt}
+          onToast={setToast}
+        />
+      ) : (
       <section className="workspace">
         <form className="card composer" onSubmit={handleGenerate}>
           <ProviderTabs models={models} selectedId={form.providerId} onSelect={(providerId) => {
@@ -602,23 +580,10 @@ function App() {
           <BatchPreview batch={previewBatch} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} />
         </section>
       </section>
-
-      <section className="card history-card">
-          <div className="section-head">
-            <h2>{user.role === 'admin' ? '全部历史记录' : '我的历史记录'}</h2>
-          <span>{historyGroups.length} 条</span>
-        </div>
-        {deletingJobId ? <p className="inline-loading"><span /> 正在删除历史记录</p> : null}
-        <div className="history-list">
-          {historyGroups.length ? historyGroups.map((group) => (
-            <HistoryItem key={batchKeyOf(group[0])} group={group} user={user} token={token} onSelect={setActiveBatchId} onOpen={setLightboxJob} onCopy={copyPrompt} onDelete={setDeleteConfirmGroup} />
-          )) : <p className="muted">暂无生成记录</p>}
-        </div>
-      </section>
+      )}
 
       {toast ? <div className="floating-toast">{toast}</div> : null}
       {lightboxJob ? createPortal(<Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} />, document.body) : null}
-      {deleteConfirmGroup ? createPortal(<ConfirmDialog group={deleteConfirmGroup} user={user} onCancel={() => setDeleteConfirmGroup(null)} onConfirm={() => handleDeleteGroup(deleteConfirmGroup)} />, document.body) : null}
     </main>
   );
 }
@@ -989,14 +954,103 @@ function ImageCaption({ job, user, token = '', onCopy, onDelete, showOwner = tru
   );
 }
 
-function HistoryItem({ group, user, token, onSelect, onOpen, onCopy, onDelete }) {
+function HistoryPage({ user, token, onOpen, onCopy, onToast }) {
+  const [groups, setGroups] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [deleteConfirmGroup, setDeleteConfirmGroup] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.toggle('modal-open', Boolean(deleteConfirmGroup));
+    return () => document.body.classList.remove('modal-open');
+  }, [deleteConfirmGroup]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await api(`/api/history?page=${page}&pageSize=10`, { token });
+        if (cancelled) return;
+        setGroups(data.groups || []);
+        setTotal(data.total || 0);
+        setTotalPages(data.totalPages || 1);
+        // 删除后当前页可能为空（比如最后一页只剩一条被删掉），自动回退一页。
+        if (!data.groups?.length && page > 1) setPage(data.totalPages || 1);
+      } catch (error) {
+        if (!cancelled) onToast(error.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, page]);
+
+  async function reload() {
+    try {
+      const data = await api(`/api/history?page=${page}&pageSize=10`, { token });
+      setGroups(data.groups || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 1);
+      if (!data.groups?.length && page > 1) setPage(Math.min(page - 1, data.totalPages || 1));
+    } catch (error) {
+      onToast(error.message);
+    }
+  }
+
+  async function handleDeleteGroup(group) {
+    setDeleteConfirmGroup(null);
+    setDeleting(true);
+
+    try {
+      // 删除整批：一批多张时逐条调用删除接口。
+      await Promise.all(group.map((job) => api(`/api/jobs/${job.id}`, { method: 'DELETE', token })));
+      onToast(user.role === 'admin' ? '历史记录已删除' : '历史记录已从你的列表移除');
+      await reload();
+    } catch (error) {
+      onToast(error.message);
+      await reload();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <section className="card history-card history-page">
+      <div className="section-head">
+        <h2>{user.role === 'admin' ? '全部历史记录' : '我的历史记录'}</h2>
+        <span>{total} 条</span>
+      </div>
+      {deleting ? <p className="inline-loading"><span /> 正在删除历史记录</p> : null}
+      <div className="history-list">
+        {loading ? <p className="muted">正在加载历史记录…</p> : groups.length ? groups.map((group) => (
+          <HistoryItem key={batchKeyOf(group[0])} group={group} user={user} token={token} onOpen={onOpen} onCopy={onCopy} onDelete={setDeleteConfirmGroup} />
+        )) : <p className="muted">暂无生成记录</p>}
+      </div>
+      {totalPages > 1 ? (
+        <div className="pagination">
+          <button type="button" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>上一页</button>
+          <span className="pagination-info">第 {page} / {totalPages} 页</span>
+          <button type="button" disabled={page >= totalPages || loading} onClick={() => setPage(page + 1)}>下一页</button>
+        </div>
+      ) : null}
+      {deleteConfirmGroup ? createPortal(<ConfirmDialog group={deleteConfirmGroup} user={user} onCancel={() => setDeleteConfirmGroup(null)} onConfirm={() => handleDeleteGroup(deleteConfirmGroup)} />, document.body) : null}
+    </section>
+  );
+}
+
+function HistoryItem({ group, user, token, onOpen, onCopy, onDelete }) {
   const lead = group[0];
   const completedJobs = group.filter((job) => job.status === 'completed' && job.imageUrl);
-
-  function handleSelect(event) {
-    if (event.target.closest('button, a')) return;
-    onSelect(batchKeyOf(lead));
-  }
 
   return (
     <article className="history-item">
@@ -1007,7 +1061,7 @@ function HistoryItem({ group, user, token, onSelect, onOpen, onCopy, onDelete })
         {lead.imageUrl ? <img src={imageSrc(lead.imageUrl, token)} alt={lead.prompt} /> : <span>{lead.progress}%</span>}
         {group.length > 1 ? <span className="batch-badge">{completedJobs.length}张</span> : null}
       </button>
-      <div className="history-main" onClick={handleSelect}>
+      <div className="history-main">
         <div className="history-title">
           <strong>{lead.providerName} · {lead.generationType === 'image-to-image' ? '图生图' : '文生图'}{group.length > 1 ? ` · ${completedJobs.length} 张` : ''}</strong>
           <span className={`status ${lead.status}`}>{lead.status}</span>
