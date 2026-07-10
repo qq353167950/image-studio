@@ -154,9 +154,9 @@ function App() {
   }, [token, (currentBatch || []).map((job) => `${job.id}:${job.status}`).join('|')]);
 
   useEffect(() => {
-    document.body.classList.toggle('modal-open', Boolean(lightboxJob));
+    document.body.classList.toggle('modal-open', Boolean(lightboxJob || settingsOpen || passwordOpen || usersOpen));
     return () => document.body.classList.remove('modal-open');
-  }, [lightboxJob]);
+  }, [lightboxJob, settingsOpen, passwordOpen, usersOpen]);
 
   function handleLogout() {
     localStorage.removeItem('image-studio-token');
@@ -443,15 +443,14 @@ function App() {
             : <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openHistory)} onClick={() => runTopbarAction(openHistory)}>历史记录</button>}
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUserSettings)} onClick={() => runTopbarAction(openUserSettings)}>模型配置</button>
           {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openAdminSettings)} onClick={() => runTopbarAction(openAdminSettings)}>默认模型配置</button> : null}
-          {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUsersPanel)} onClick={() => runTopbarAction(openUsersPanel)}>用户列表</button> : null}
+          {user.role === 'admin' ? <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openUsersPanel)} onClick={() => runTopbarAction(openUsersPanel)}>用户管理</button> : null}
           <button type="button" onTouchEnd={(event) => runTopbarTouchAction(event, openPasswordSettings)} onClick={() => runTopbarAction(openPasswordSettings)}>修改密码</button>
           <button type="button" onClick={handleLogout}>退出</button>
         </div>
       </header>
 
-      {settingsOpen ? (
+      {settingsOpen ? createPortal((
         <SettingsDialog
-          inline
           settings={settings}
           setSettings={setSettings}
           availableModels={availableModels}
@@ -462,26 +461,25 @@ function App() {
           onSubmit={handleSaveSettings}
           onClose={() => setSettingsOpen(false)}
         />
-      ) : null}
+      ), document.body) : null}
 
-      {passwordOpen ? (
+      {passwordOpen ? createPortal((
         <PasswordDialog
-          inline
           form={passwordForm}
           setForm={setPasswordForm}
           onSubmit={handleChangePassword}
           onClose={() => setPasswordOpen(false)}
         />
-      ) : null}
+      ), document.body) : null}
 
-      {usersOpen ? (
+      {usersOpen ? createPortal((
         <UsersPanel
           users={adminUsers}
           showAll={showAllPasswords}
           onToggleAll={() => setShowAllPasswords((current) => !current)}
           onClose={() => setUsersOpen(false)}
         />
-      ) : null}
+      ), document.body) : null}
 
       {view === 'history' ? (
         <HistoryPage
@@ -1094,11 +1092,11 @@ function ConfirmDialog({ group, user, onCancel, onConfirm }) {
 
 function UsersPanel({ users, showAll, onToggleAll, onClose }) {
   return (
-    <section className="card inline-panel-wrap">
-      <div className="settings-modal inline-settings-panel">
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="settings-modal users-modal" onClick={(event) => event.stopPropagation()}>
         <div className="settings-card">
           <div className="section-head">
-            <h2>用户列表</h2>
+            <h2>用户管理</h2>
             <span>{users.length} 个账号</span>
           </div>
           <p className="muted compact">这里显示所有注册账号及其密码，密码默认隐藏，点击右侧按钮可一键全部显示或隐藏。</p>
@@ -1127,7 +1125,7 @@ function UsersPanel({ users, showAll, onToggleAll, onClose }) {
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 
