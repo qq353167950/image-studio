@@ -44,6 +44,7 @@ function App() {
   const [showAllPasswords, setShowAllPasswords] = useState(false);
   const [availableModels, setAvailableModels] = useState({ gpt: [], grok: [] });
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [downloadingIds, setDownloadingIds] = useState([]);
   const touchActivationAtRef = useRef(0);
   const [form, setForm] = useState({
     prompt: '',
@@ -172,10 +173,17 @@ function App() {
     event.preventDefault();
     setToast('');
 
+    const credentials = sanitizeAuthForm(loginForm);
+    const validationError = validateAuthForm(credentials, { allowAdmin: authMode === 'login' });
+    if (validationError) {
+      setToast(validationError);
+      return;
+    }
+
     try {
       const data = await api(authMode === 'login' ? '/api/auth/login' : '/api/auth/register', {
         method: 'POST',
-        body: sanitizeAuthForm(loginForm)
+        body: credentials
       });
       localStorage.setItem('image-studio-token', data.token);
       setToken(data.token);
@@ -188,13 +196,17 @@ function App() {
   async function handleGenerate(event) {
     event.preventDefault();
     setToast('');
-    if (!form.prompt.trim()) {
-      setToast('请先输入提示词再开始生成');
+
+    const validationError = validateGenerateForm(form, models);
+    if (validationError) {
+      setToast(validationError);
       return;
     }
+
     setSubmittingJob(true);
     const imageCount = Math.min(4, Math.max(1, Number(form.imageCount) || 1));
     const providerName = models.find((model) => model.id === form.providerId)?.name || (form.providerId === 'grok' ? 'Grok' : 'GPT');
+    setCurrentBatch(createPendingBatch(form, imageCount, providerName));
 
     try {
       const data = await api('/api/jobs', {
@@ -205,6 +217,7 @@ function App() {
       const created = data.jobs?.length ? data.jobs : [data.job].filter(Boolean);
       setCurrentBatch(created);
     } catch (error) {
+      setCurrentBatch(null);
       setToast(error.message);
     } finally {
       setSubmittingJob(false);
@@ -239,6 +252,11 @@ function App() {
   async function handleFetchModels(providerId = settingsTab, event) {
     event?.preventDefault?.();
     event?.stopPropagation?.();
+    const validationError = validateSettingsForTab(settings, providerId, { requireComplete: true, allowPartialModels: true });
+    if (validationError) {
+      setToast(validationError);
+      return;
+    }
     setToast('正在基于当前 URL 和 Key 获取模型列表...');
 
     try {
@@ -315,6 +333,12 @@ function App() {
     event.preventDefault();
     setToast('');
 
+    const validationError = validatePasswordChangeForm(passwordForm);
+    if (validationError) {
+      setToast(validationError);
+      return;
+    }
+
     try {
       const data = await api('/api/me/password', {
         method: 'PUT',
@@ -388,6 +412,29 @@ function App() {
   async function copyPrompt(prompt) {
     await navigator.clipboard.writeText(prompt);
     setToast('提示词已复制');
+  }
+
+  async function handleDownloadJobs(jobs) {
+    const list = jobs.filter((job) => job?.status === 'completed' && job.imageUrl);
+    if (!list.length) {
+      setToast('当前没有可下载的图片');
+      return;
+    }
+
+    const ids = list.map((job) => job.id);
+    if (ids.some((id) => downloadingIds.includes(id))) return;
+
+    setDownloadingIds((current) => Array.from(new Set([...current, ...ids])));
+    setToast(list.length > 1 ? `正在打包下载 ${list.length} 张图片...` : '正在准备下载图片...');
+
+    try {
+      await downloadJobs(list, token);
+      setToast(list.length > 1 ? '图片打包完成，已开始下载' : '图片已开始下载');
+    } catch (error) {
+      setToast(error.message || '下载失败，请稍后重试');
+    } finally {
+      setDownloadingIds((current) => current.filter((id) => !ids.includes(id)));
+    }
   }
 
   function openHistory() {
@@ -488,6 +535,8 @@ function App() {
           onOpen={setLightboxJob}
           onCopy={copyPrompt}
           onToast={setToast}
+          onDownload={handleDownloadJobs}
+          downloadingIds={downloadingIds}
         />
       ) : (
       <section className="workspace">
@@ -554,19 +603,36 @@ function App() {
             <span>{batchStatusLabel(previewBatch)}</span>
           </div>
           <BatchProgress batch={previewBatch} />
-          <BatchPreview batch={previewBatch} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} />
+          <BatchPreview batch={previewBatch} user={user} token={token} onOpen={setLightboxJob} onCopy={copyPrompt} onDownload={handleDownloadJobs} downloadingIds={downloadingIds} />
         </section>
       </section>
       )}
 
       {toast ? createPortal(<div className="floating-toast">{toast}</div>, document.body) : null}
-      {lightboxJob ? createPortal(<Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} />, document.body) : null}
+      {lightboxJob ? createPortal(<Lightbox job={lightboxJob} user={user} token={token} onClose={() => setLightboxJob(null)} onCopy={copyPrompt} onDownload={handleDownloadJobs} downloadingIds={downloadingIds} />, document.body) : null}
     </main>
   );
 }
 
 function batchKeyOf(job) {
   return job?.batchId || job?.id || '';
+}
+
+function createPendingBatch(form, count, providerName) {
+  const batchId = `pending-${Date.now()}`;
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${batchId}-${index}`,
+    batchId,
+    batchIndex: index,
+    status: 'queued',
+    progress: 1,
+    progressMessage: '任务正在提交',
+    providerName,
+    generationType: form.generationType,
+    prompt: form.prompt,
+    imageUrl: '',
+    pendingLocal: true
+  }));
 }
 
 function groupJobsByBatch(list) {
@@ -622,13 +688,13 @@ function BatchProgress({ batch }) {
   );
 }
 
-function BatchPreview({ batch, user, token, onOpen, onCopy }) {
+function BatchPreview({ batch, user, token, onOpen, onCopy, onDownload, downloadingIds = [] }) {
   if (!batch?.length) {
     return <div className="empty-preview">完成后的图片会出现在这里</div>;
   }
 
   if (batch.length === 1) {
-    return <ImagePreview job={batch[0]} user={user} token={token} onOpen={onOpen} onCopy={onCopy} />;
+    return <ImagePreview job={batch[0]} user={user} token={token} onOpen={onOpen} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} />;
   }
 
   const anyCompleted = batch.some((job) => job.status === 'completed' && job.imageUrl);
@@ -655,7 +721,7 @@ function BatchPreview({ batch, user, token, onOpen, onCopy }) {
           </div>
         ))}
       </div>
-      {anyCompleted ? <ImageCaption job={batch.find((job) => job.status === 'completed' && job.imageUrl) || batch[0]} user={user} token={token} onCopy={onCopy} /> : null}
+      {anyCompleted ? <ImageCaption job={batch.find((job) => job.status === 'completed' && job.imageUrl) || batch[0]} jobs={batch} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} showOwner={false} /> : null}
     </article>
   );
 }
@@ -881,13 +947,13 @@ function ModelInput({ label, value, placeholder, models, providerId, onFetchMode
   );
 }
 
-function ImagePreview({ job, user, token, onOpen, onCopy }) {
+function ImagePreview({ job, user, token, onOpen, onCopy, onDownload, downloadingIds = [] }) {
   if (job?.status === 'failed') {
     return <div className="empty-preview error-preview">生成失败：{failureHint(job.error || '生成失败，请稍后重试。')}</div>;
   }
 
   if (job?.status === 'queued' || job?.status === 'running') {
-    return <div className="empty-preview">图片生成中，完成后将在这里显示。</div>;
+    return <div className="batch-placeholder preview-placeholder">图片生成中，完成后将在这里显示。</div>;
   }
 
   if (job?.status !== 'completed' || !job?.imageUrl) {
@@ -899,12 +965,15 @@ function ImagePreview({ job, user, token, onOpen, onCopy }) {
       <button className="image-button" type="button" onClick={() => onOpen(job)}>
         <img src={imageSrc(job.imageUrl, token)} alt={job.prompt} />
       </button>
-      <ImageCaption job={job} user={user} token={token} onCopy={onCopy} />
+      <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} showOwner={false} />
     </article>
   );
 }
 
-function ImageCaption({ job, user, token = '', onCopy, onDelete, showOwner = true, showDelete = false }) {
+function ImageCaption({ job, jobs, user, token = '', onCopy, onDownload, onDelete, showOwner = true, showDelete = false, downloadingIds = [] }) {
+  const downloadJobsList = (jobs?.length ? jobs : [job]).filter((item) => item?.status === 'completed' && item.imageUrl);
+  const isDownloading = downloadJobsList.some((item) => downloadingIds.includes(item.id));
+
   function handleActionClick(event, action) {
     event.stopPropagation();
     action();
@@ -916,14 +985,16 @@ function ImageCaption({ job, user, token = '', onCopy, onDelete, showOwner = tru
       <p>{job.prompt}</p>
       <div className="actions">
         <button type="button" onClick={(event) => handleActionClick(event, () => onCopy(job.prompt))}>复制提示词</button>
-        <button type="button" onClick={(event) => handleActionClick(event, () => downloadImage(job, token))}>下载图片</button>
+        <button className={isDownloading ? 'download-action loading' : 'download-action'} type="button" disabled={isDownloading} onClick={(event) => handleActionClick(event, () => onDownload(downloadJobsList))}>
+          {isDownloading ? <><span className="mini-spinner" />正在下载</> : downloadJobsList.length > 1 ? `下载 ${downloadJobsList.length} 张图片` : '下载图片'}
+        </button>
         {showDelete ? <button className="danger-action" type="button" onClick={(event) => handleActionClick(event, () => onDelete(job))}>删除记录</button> : null}
       </div>
     </div>
   );
 }
 
-function HistoryPage({ user, token, onOpen, onCopy, onToast }) {
+function HistoryPage({ user, token, onOpen, onCopy, onToast, onDownload, downloadingIds = [] }) {
   const [groups, setGroups] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -1002,7 +1073,7 @@ function HistoryPage({ user, token, onOpen, onCopy, onToast }) {
       {deleting ? <p className="inline-loading"><span /> 正在删除历史记录</p> : null}
       <div className="history-list">
         {loading ? <p className="muted">正在加载历史记录…</p> : groups.length ? groups.map((group) => (
-          <HistoryItem key={batchKeyOf(group[0])} group={group} user={user} token={token} onOpen={onOpen} onCopy={onCopy} onDelete={setDeleteConfirmGroup} />
+          <HistoryItem key={batchKeyOf(group[0])} group={group} user={user} token={token} onOpen={onOpen} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} onDelete={setDeleteConfirmGroup} />
         )) : <p className="muted">暂无生成记录</p>}
       </div>
       {totalPages > 1 ? (
@@ -1017,7 +1088,7 @@ function HistoryPage({ user, token, onOpen, onCopy, onToast }) {
   );
 }
 
-function HistoryItem({ group, user, token, onOpen, onCopy, onDelete }) {
+function HistoryItem({ group, user, token, onOpen, onCopy, onDownload, downloadingIds = [], onDelete }) {
   const lead = group[0];
   const completedJobs = group.filter((job) => job.status === 'completed' && job.imageUrl);
 
@@ -1049,7 +1120,7 @@ function HistoryItem({ group, user, token, onOpen, onCopy, onDelete }) {
           </div>
         ) : null}
         {lead.inputImages?.length ? <ReferenceGrid images={lead.inputImages} token={token} readonly onOpen={(image) => onOpen({ imageUrl: image.dataUrl, prompt: image.name || '参考图', generationType: 'image-to-image', providerName: '参考图', referencePreview: true })} /> : null}
-        {lead.imageUrl ? <ImageCaption job={lead} user={user} token={token} onCopy={onCopy} onDelete={() => onDelete(group)} showOwner={false} showDelete /> : null}
+        {lead.imageUrl ? <ImageCaption job={lead} jobs={group} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} onDelete={() => onDelete(group)} showOwner={false} showDelete /> : null}
       </div>
     </article>
   );
@@ -1129,13 +1200,13 @@ function UsersPanel({ users, showAll, onToggleAll, onClose }) {
   );
 }
 
-function Lightbox({ job, user, token, onClose, onCopy }) {
+function Lightbox({ job, user, token, onClose, onCopy, onDownload, downloadingIds = [] }) {
   return (
     <div className="lightbox" onClick={onClose}>
       <div className="lightbox-panel" onClick={(event) => event.stopPropagation()}>
         <button className="close" type="button" onClick={onClose}>关闭</button>
         <img src={imageSrc(job.imageUrl, token)} alt={job.prompt} />
-        {job.referencePreview ? <p className="reference-preview-caption">{job.prompt}</p> : <ImageCaption job={job} user={user} token={token} onCopy={onCopy} />}
+        {job.referencePreview ? <p className="reference-preview-caption">{job.prompt}</p> : <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} />}
       </div>
     </div>
   );
@@ -1256,6 +1327,138 @@ function downloadImage(job, token = '') {
   anchor.remove();
 }
 
+async function downloadJobs(jobs, token = '') {
+  if (jobs.length === 1) {
+    const item = await fetchJobImage(jobs[0], token);
+    triggerBlobDownload(item.blob, imageFileName(jobs[0], item.blob.type));
+    return;
+  }
+
+  const files = await Promise.all(jobs.map(async (job, index) => {
+    const item = await fetchJobImage(job, token);
+    return {
+      name: `${String(index + 1).padStart(2, '0')}-${imageFileName(job, item.blob.type)}`,
+      data: new Uint8Array(await item.blob.arrayBuffer())
+    };
+  }));
+  const zip = createZip(files);
+  triggerBlobDownload(zip, `image-studio-${batchKeyOf(jobs[0]) || Date.now()}.zip`);
+}
+
+async function fetchJobImage(job, token = '') {
+  const response = await fetch(imageSrc(job.imageUrl, token), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`图片下载失败：${response.status}`);
+  return { blob: await response.blob() };
+}
+
+function triggerBlobDownload(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function imageFileName(job, mimeType = '') {
+  const extension = mimeType.includes('jpeg') ? 'jpg' : mimeType.includes('webp') ? 'webp' : 'png';
+  return `image-studio-${job.id}.${extension}`;
+}
+
+function createZip(files) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const name = new TextEncoder().encode(file.name);
+    const crc = crc32(file.data);
+    const localHeader = createLocalZipHeader({ name, crc, size: file.data.length });
+    localParts.push(localHeader, name, file.data);
+
+    const centralHeader = createCentralZipHeader({ name, crc, size: file.data.length, offset });
+    centralParts.push(centralHeader, name);
+    offset += localHeader.length + name.length + file.data.length;
+  }
+
+  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const end = createEndZipRecord({ count: files.length, centralSize, centralOffset: offset });
+  return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+}
+
+function createLocalZipHeader({ name, crc, size }) {
+  const bytes = new Uint8Array(30);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, 0, true);
+  view.setUint16(10, 0, true);
+  view.setUint16(12, 0, true);
+  view.setUint32(14, crc, true);
+  view.setUint32(18, size, true);
+  view.setUint32(22, size, true);
+  view.setUint16(26, name.length, true);
+  view.setUint16(28, 0, true);
+  return bytes;
+}
+
+function createCentralZipHeader({ name, crc, size, offset }) {
+  const bytes = new Uint8Array(46);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x02014b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 20, true);
+  view.setUint16(8, 0, true);
+  view.setUint16(10, 0, true);
+  view.setUint16(12, 0, true);
+  view.setUint16(14, 0, true);
+  view.setUint32(16, crc, true);
+  view.setUint32(20, size, true);
+  view.setUint32(24, size, true);
+  view.setUint16(28, name.length, true);
+  view.setUint16(30, 0, true);
+  view.setUint16(32, 0, true);
+  view.setUint16(34, 0, true);
+  view.setUint16(36, 0, true);
+  view.setUint32(38, 0, true);
+  view.setUint32(42, offset, true);
+  return bytes;
+}
+
+function createEndZipRecord({ count, centralSize, centralOffset }) {
+  const bytes = new Uint8Array(22);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(4, 0, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, count, true);
+  view.setUint16(10, count, true);
+  view.setUint32(12, centralSize, true);
+  view.setUint32(16, centralOffset, true);
+  view.setUint16(20, 0, true);
+  return bytes;
+}
+
+function crc32(data) {
+  let crc = -1;
+  for (const byte of data) {
+    crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff];
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  }
+  return value >>> 0;
+});
+
 function sanitizeUsername(value) {
   return String(value || '').replace(/\s+/g, '').replace(/[^A-Za-z]/g, '').slice(0, 15);
 }
@@ -1269,6 +1472,54 @@ function sanitizeAuthForm(form) {
     username: sanitizeUsername(form.username),
     password: sanitizePassword(form.password)
   };
+}
+
+function validateAuthForm(form, { allowAdmin }) {
+  if (!form.username) return '请输入账号。';
+  if (!/^[A-Za-z]+$/.test(form.username)) return '账号只能使用英文字母。';
+  if (form.username.length < 5) return '账号最少 5 位。';
+  if (form.username.length > 15) return '账号最长 15 位。';
+  if (!allowAdmin && form.username === 'admin') return '账号不能注册为 admin。';
+  return validatePasswordValue(form.password);
+}
+
+function validatePasswordValue(password) {
+  if (!password) return '请输入密码。';
+  if (!/^[A-Za-z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]+$/.test(password)) return '密码只能使用英文、数字和常见特殊符号。';
+  if (password.length < 6) return '密码最少 6 位。';
+  if (password.length > 20) return '密码最长 20 位。';
+  return '';
+}
+
+function validatePasswordChangeForm(form) {
+  const currentError = validatePasswordValue(sanitizePassword(form.currentPassword));
+  if (currentError) return currentError.replace('密码', '当前密码');
+  const nextError = validatePasswordValue(sanitizePassword(form.newPassword));
+  if (nextError) return nextError.replace('密码', '新密码');
+  if (form.currentPassword === form.newPassword) return '新密码不能和当前密码相同。';
+  return '';
+}
+
+function validateGenerateForm(form, models) {
+  const prompt = form.prompt.trim();
+  const selected = models.find((model) => model.id === form.providerId);
+  if (!form.providerId) return '请选择模型入口。';
+  if (!selected) return '当前模型入口不可用，请刷新页面后重试。';
+  if (!['text-to-image', 'image-to-image'].includes(form.generationType)) return '请选择正确的生成类型。';
+  if (form.generationType === 'image-to-image' && !selected.supportsImageToImage) return '当前模型入口不支持图生图。';
+  if (form.generationType === 'image-to-image' && !form.inputImages.length) return '请先上传参考图。';
+  if (!prompt) return '请先输入提示词再开始生成。';
+  if (prompt.length > 600) return '提示词最长 600 字。';
+  if (!['auto', 'generations', 'responses', 'chat'].includes(form.method)) return '请选择正确的调用方式。';
+  if (form.method === 'responses' && !selected.supportsResponses) return '当前模型入口不支持 Responses 调用方式。';
+  if (form.method === 'chat' && !selected.supportsChatCompletions) return '当前模型入口不支持 Chat 调用方式。';
+  if (!sizeOptions.some((option) => option.value === form.size)) return '请选择正确的分辨率。';
+  const imageCount = Number(form.imageCount);
+  if (!Number.isInteger(imageCount) || imageCount < 1 || imageCount > 4) return '生成数量只能选择 1 到 4 张。';
+  const totalBytes = form.inputImages.reduce((total, image) => total + Number(image.bytes || dataUrlToBytes(image.dataUrl)), 0);
+  if (form.inputImages.length > maxReferenceImages) return `最多上传 ${maxReferenceImages} 张参考图。`;
+  if (totalBytes > maxReferenceTotalBytes) return `参考图总大小最多 ${formatBytes(maxReferenceTotalBytes)}。`;
+  return '';
 }
 
 function defaultSettings() {
@@ -1381,27 +1632,28 @@ function createDiagnosticId() {
 
 function validateSettingsForTab(settings, tab, options = {}) {
   const requireComplete = Boolean(options.requireComplete);
+  const allowPartialModels = Boolean(options.allowPartialModels);
 
   if (tab === 'gpt') {
-    if (requireComplete && !settings.baseUrl && !settings.apiKey && !settings.generationModel && !settings.editModel && !settings.responsesModel && !settings.chatModel) return '请先填写 GPT Base URL、API Key，并至少填写一个 GPT 模型后再保存。';
+    if (requireComplete && !settings.baseUrl && !settings.apiKey && !allowPartialModels && !settings.generationModel && !settings.editModel && !settings.responsesModel && !settings.chatModel) return '请先填写 GPT Base URL、API Key，并至少填写一个 GPT 模型后再保存。';
     if (requireComplete && !settings.baseUrl) return '请填写 GPT Base URL。';
     if (requireComplete && !settings.apiKey) return '请填写 GPT API Key。';
-    if (requireComplete && !settings.generationModel && !settings.editModel && !settings.responsesModel && !settings.chatModel) return '请至少填写一个 GPT 模型。';
+    if (requireComplete && !allowPartialModels && !settings.generationModel && !settings.editModel && !settings.responsesModel && !settings.chatModel) return '请至少填写一个 GPT 模型。';
     if (settings.baseUrl && !/^https?:\/\//.test(settings.baseUrl)) return 'GPT Base URL 必须以 http:// 或 https:// 开头。';
     if (settings.apiKey && !settings.baseUrl) return '填写 GPT API Key 后，请同时填写 GPT Base URL。';
     if (settings.baseUrl && !settings.apiKey) return '填写 GPT Base URL 后，请同时填写 GPT API Key。';
-    if (settings.baseUrl && !settings.generationModel && !settings.editModel && !settings.responsesModel && !settings.chatModel) return '请至少填写一个 GPT 模型。';
+    if (!allowPartialModels && settings.baseUrl && !settings.generationModel && !settings.editModel && !settings.responsesModel && !settings.chatModel) return '请至少填写一个 GPT 模型。';
   }
 
   if (tab === 'grok') {
-    if (requireComplete && !settings.grokBaseUrl && !settings.grokApiKey && !settings.grokModel) return '请先填写 Grok Base URL、API Key 和模型后再保存。';
+    if (requireComplete && !settings.grokBaseUrl && !settings.grokApiKey && !allowPartialModels && !settings.grokModel) return '请先填写 Grok Base URL、API Key 和模型后再保存。';
     if (requireComplete && !settings.grokBaseUrl) return '请填写 Grok Base URL。';
     if (requireComplete && !settings.grokApiKey) return '请填写 Grok API Key。';
-    if (requireComplete && !settings.grokModel) return '请填写 Grok 模型。';
+    if (requireComplete && !allowPartialModels && !settings.grokModel) return '请填写 Grok 模型。';
     if (settings.grokBaseUrl && !/^https?:\/\//.test(settings.grokBaseUrl)) return 'Grok Base URL 必须以 http:// 或 https:// 开头。';
     if (settings.grokApiKey && !settings.grokBaseUrl) return '填写 Grok API Key 后，请同时填写 Grok Base URL。';
     if (settings.grokBaseUrl && !settings.grokApiKey) return '填写 Grok Base URL 后，请同时填写 Grok API Key。';
-    if (settings.grokBaseUrl && !settings.grokModel) return '请填写 Grok 模型。';
+    if (!allowPartialModels && settings.grokBaseUrl && !settings.grokModel) return '请填写 Grok 模型。';
   }
 
   return '';
