@@ -1872,8 +1872,14 @@ select:focus {
   align-items: flex-start;
 }
 
+.topbar > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .account-pill {
-  flex: 0 1 760px;
+  flex: 0 1 auto;
+  max-width: min(860px, 72vw);
   flex-wrap: nowrap;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -1885,6 +1891,12 @@ select:focus {
 }
 
 .account-pill button {
+  flex: 0 0 auto;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.account-pill > span {
   flex: 0 0 auto;
   min-width: max-content;
   white-space: nowrap;
@@ -1933,8 +1945,7 @@ button:disabled .mini-spinner {
   }
 
   .account-pill {
-    max-width: 620px;
-    flex-basis: 620px;
+    max-width: min(640px, 68vw);
   }
 }
 
