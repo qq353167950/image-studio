@@ -1874,9 +1874,19 @@ select:focus {
 
 .account-pill {
   flex: 0 1 760px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.account-pill::-webkit-scrollbar {
+  display: none;
 }
 
 .account-pill button {
+  flex: 0 0 auto;
+  min-width: max-content;
   white-space: nowrap;
 }
 

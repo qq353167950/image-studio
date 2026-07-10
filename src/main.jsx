@@ -1206,7 +1206,7 @@ function Lightbox({ job, user, token, onClose, onCopy, onDownload, downloadingId
       <div className="lightbox-panel" onClick={(event) => event.stopPropagation()}>
         <button className="close" type="button" onClick={onClose}>关闭</button>
         <img src={imageSrc(job.imageUrl, token)} alt={job.prompt} />
-        {job.referencePreview ? <p className="reference-preview-caption">{job.prompt}</p> : <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} />}
+        {job.referencePreview ? <p className="reference-preview-caption">{job.prompt}</p> : <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} showOwner={false} />}
       </div>
     </div>
   );
