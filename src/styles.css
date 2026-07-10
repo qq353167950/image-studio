@@ -1863,6 +1863,55 @@ select:focus {
   background: rgba(225, 229, 236, 0.5);
 }
 
+.topbar {
+  align-items: flex-start;
+}
+
+.account-pill {
+  flex: 0 1 760px;
+}
+
+.account-pill button {
+  white-space: nowrap;
+}
+
+.history-page .section-head {
+  align-items: center;
+}
+
+.confirm-modal {
+  overflow: hidden;
+  padding: 24px;
+}
+
+.confirm-actions {
+  position: static;
+  margin: 18px -24px -24px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(226, 232, 240, 0.72);
+  border-radius: 0 0 34px 34px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.download-action.loading {
+  cursor: wait;
+  opacity: 0.78;
+}
+
+.mini-spinner {
+  width: 13px;
+  height: 13px;
+  margin-right: 7px;
+  border: 2px solid rgba(0, 113, 227, 0.18);
+  border-top-color: var(--blue);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+button:disabled .mini-spinner {
+  display: inline-block;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
@@ -1870,6 +1919,7 @@ select:focus {
 
   .account-pill {
     max-width: 620px;
+    flex-basis: 620px;
   }
 }
 
@@ -1881,6 +1931,11 @@ select:focus {
   .topbar {
     position: static;
     gap: 16px;
+  }
+
+  .account-pill {
+    flex-basis: auto;
+    max-width: none;
   }
 
   .workspace {
