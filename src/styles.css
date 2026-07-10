@@ -1802,6 +1802,11 @@ select:focus {
   background: rgba(246, 248, 252, 0.64);
 }
 
+.preview-placeholder {
+  min-height: 360px;
+  margin-top: 14px;
+}
+
 .batch-badge {
   background: rgba(29, 29, 31, 0.72);
   backdrop-filter: blur(12px);

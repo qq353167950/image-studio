@@ -206,6 +206,7 @@ function App() {
     setSubmittingJob(true);
     const imageCount = Math.min(4, Math.max(1, Number(form.imageCount) || 1));
     const providerName = models.find((model) => model.id === form.providerId)?.name || (form.providerId === 'grok' ? 'Grok' : 'GPT');
+    setCurrentBatch(createPendingBatch(form, imageCount, providerName));
 
     try {
       const data = await api('/api/jobs', {
@@ -216,6 +217,7 @@ function App() {
       const created = data.jobs?.length ? data.jobs : [data.job].filter(Boolean);
       setCurrentBatch(created);
     } catch (error) {
+      setCurrentBatch(null);
       setToast(error.message);
     } finally {
       setSubmittingJob(false);
@@ -616,6 +618,23 @@ function batchKeyOf(job) {
   return job?.batchId || job?.id || '';
 }
 
+function createPendingBatch(form, count, providerName) {
+  const batchId = `pending-${Date.now()}`;
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${batchId}-${index}`,
+    batchId,
+    batchIndex: index,
+    status: 'queued',
+    progress: 1,
+    progressMessage: '任务正在提交',
+    providerName,
+    generationType: form.generationType,
+    prompt: form.prompt,
+    imageUrl: '',
+    pendingLocal: true
+  }));
+}
+
 function groupJobsByBatch(list) {
   // 按 batchId 分组并保持任务顺序，兼容无 batchId 的旧记录（单张一组）。
   const groups = new Map();
@@ -702,7 +721,7 @@ function BatchPreview({ batch, user, token, onOpen, onCopy, onDownload, download
           </div>
         ))}
       </div>
-      {anyCompleted ? <ImageCaption job={batch.find((job) => job.status === 'completed' && job.imageUrl) || batch[0]} jobs={batch} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} /> : null}
+      {anyCompleted ? <ImageCaption job={batch.find((job) => job.status === 'completed' && job.imageUrl) || batch[0]} jobs={batch} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} showOwner={false} /> : null}
     </article>
   );
 }
@@ -934,7 +953,7 @@ function ImagePreview({ job, user, token, onOpen, onCopy, onDownload, downloadin
   }
 
   if (job?.status === 'queued' || job?.status === 'running') {
-    return <div className="empty-preview">图片生成中，完成后将在这里显示。</div>;
+    return <div className="batch-placeholder preview-placeholder">图片生成中，完成后将在这里显示。</div>;
   }
 
   if (job?.status !== 'completed' || !job?.imageUrl) {
@@ -946,7 +965,7 @@ function ImagePreview({ job, user, token, onOpen, onCopy, onDownload, downloadin
       <button className="image-button" type="button" onClick={() => onOpen(job)}>
         <img src={imageSrc(job.imageUrl, token)} alt={job.prompt} />
       </button>
-      <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} />
+      <ImageCaption job={job} user={user} token={token} onCopy={onCopy} onDownload={onDownload} downloadingIds={downloadingIds} showOwner={false} />
     </article>
   );
 }
