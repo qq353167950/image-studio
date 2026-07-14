@@ -3,6 +3,36 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
+if (typeof document !== 'undefined' && !document.getElementById('mobile-layout-runtime')) {
+  const style = document.createElement('style');
+  style.id = 'mobile-layout-runtime';
+  style.textContent = `
+    @media (max-width: 900px) {
+      html, body, #root { max-width: 100% !important; overflow-x: hidden !important; }
+      body { min-width: 0 !important; }
+      .app-shell { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 12px 10px 28px !important; box-sizing: border-box !important; overflow-x: hidden !important; }
+      .topbar { display: flex !important; flex-direction: column !important; align-items: stretch !important; position: static !important; gap: 12px !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; }
+      .topbar > div:first-child { flex: none !important; width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
+      .topbar h1 { font-size: clamp(24px, 8vw, 36px) !important; line-height: 1.1 !important; overflow-wrap: anywhere !important; }
+      .account-pill { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important; width: 100% !important; max-width: 100% !important; flex: none !important; overflow: visible !important; box-sizing: border-box !important; }
+      .account-pill > span { grid-column: 1 / -1 !important; width: 100% !important; min-width: 0 !important; white-space: normal !important; overflow-wrap: anywhere !important; }
+      .account-pill button { width: 100% !important; min-width: 0 !important; max-width: 100% !important; white-space: nowrap !important; box-sizing: border-box !important; }
+      .workspace { display: flex !important; flex-direction: column !important; grid-template-columns: none !important; gap: 12px !important; width: 100% !important; max-width: 100% !important; min-width: 0 !important; }
+      .composer, .preview-card, .history-card, .history-page, .card { width: 100% !important; max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+      .composer { position: static !important; order: 1 !important; }
+      .preview-card { order: 2 !important; min-height: auto !important; }
+      .form-grid, .settings-grid, .history-item, .batch-grid { grid-template-columns: 1fr !important; }
+      .segmented.four { grid-template-columns: 1fr 1fr !important; }
+      img, video, canvas, .image-button, .image-button img { max-width: 100% !important; }
+    }
+    @media (max-width: 480px) {
+      .account-pill { grid-template-columns: 1fr !important; }
+      .account-pill button { white-space: normal !important; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 const sizeOptions = [
   { value: 'auto', label: '自动' },
   { value: '1024x1024', label: '1024x1024（1K 方图）' },
