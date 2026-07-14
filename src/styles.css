@@ -22,11 +22,18 @@ body {
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   background:
     radial-gradient(circle at 12% 4%, rgba(96, 165, 250, 0.24), transparent 34rem),
     radial-gradient(circle at 92% 8%, rgba(168, 85, 247, 0.16), transparent 30rem),
     linear-gradient(135deg, #fbfbfd 0%, #f3f5fb 52%, #eef2f9 100%);
+}
+
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 body.modal-open {
@@ -247,9 +254,17 @@ button,
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(330px, 430px) 1fr;
+  grid-template-columns: 1fr;
   gap: 20px;
   align-items: start;
+  min-width: 0;
+  width: 100%;
+}
+
+@media (min-width: 921px) {
+  .workspace {
+    grid-template-columns: minmax(330px, 430px) minmax(0, 1fr);
+  }
 }
 
 .card {
@@ -1518,8 +1533,22 @@ button:active {
 }
 
 .workspace {
-  grid-template-columns: minmax(350px, 450px) minmax(0, 1fr);
   gap: 22px;
+}
+
+@media (min-width: 921px) {
+  .workspace {
+    grid-template-columns: minmax(350px, 450px) minmax(0, 1fr);
+  }
+
+  .composer {
+    position: sticky;
+    top: 142px;
+  }
+
+  .preview-card {
+    min-height: 690px;
+  }
 }
 
 .card {
@@ -1534,15 +1563,16 @@ button:active {
 .preview-card,
 .history-card {
   padding: 26px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .composer {
-  position: sticky;
-  top: 142px;
+  position: static;
 }
 
 .preview-card {
-  min-height: 690px;
+  min-height: auto;
 }
 
 .section-head h2 {
@@ -1870,36 +1900,48 @@ select:focus {
 
 .topbar {
   align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .topbar > div:first-child {
   min-width: 0;
   flex: 1 1 auto;
+  max-width: 100%;
 }
 
 .account-pill {
   flex: 0 1 auto;
-  max-width: min(860px, 72vw);
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  overflow: visible;
 }
 
-.account-pill::-webkit-scrollbar {
-  display: none;
-}
+@media (min-width: 921px) {
+  .account-pill {
+    max-width: min(860px, 72vw);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
 
-.account-pill button {
-  flex: 0 0 auto;
-  min-width: max-content;
-  white-space: nowrap;
-}
+  .account-pill::-webkit-scrollbar {
+    display: none;
+  }
 
-.account-pill > span {
-  flex: 0 0 auto;
-  min-width: max-content;
-  white-space: nowrap;
+  .account-pill button {
+    flex: 0 0 auto;
+    min-width: max-content;
+    white-space: nowrap;
+  }
+
+  .account-pill > span {
+    flex: 0 0 auto;
+    min-width: max-content;
+    white-space: nowrap;
+  }
 }
 
 .history-page .section-head {
@@ -1939,7 +1981,7 @@ button:disabled .mini-spinner {
   display: inline-block;
 }
 
-@media (max-width: 1180px) {
+@media (min-width: 921px) and (max-width: 1180px) {
   .workspace {
     grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
   }
@@ -1951,33 +1993,151 @@ button:disabled .mini-spinner {
 
 @media (max-width: 920px) {
   .app-shell {
-    width: min(100% - 24px, 1400px);
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 12px 10px 28px;
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
 
   .topbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     position: static;
-    gap: 16px;
+    gap: 12px;
+    width: 100%;
+    max-width: 100%;
+    margin-bottom: 12px;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+
+  .topbar > div:first-child {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .topbar h1 {
+    font-size: clamp(24px, 8vw, 36px);
+    line-height: 1.1;
+    overflow-wrap: anywhere;
   }
 
   .account-pill {
-    flex-basis: auto;
-    max-width: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    flex: none;
+    flex-wrap: wrap;
+    overflow: visible;
+    overflow-x: visible;
+    padding: 8px;
+    border-radius: 18px;
+    box-sizing: border-box;
+  }
+
+  .account-pill > span {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+  }
+
+  .account-pill button {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 40px;
+    padding: 0 8px;
+    font-size: 13px;
+    white-space: nowrap;
+    box-sizing: border-box;
+    flex: none;
   }
 
   .workspace {
-    gap: 18px;
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    gap: 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .composer,
+  .preview-card,
+  .history-card,
+  .history-page,
+  .card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   .composer {
     position: static;
+    order: 1;
   }
 
   .preview-card {
+    order: 2;
     min-height: auto;
   }
 
   .empty-preview {
-    min-height: 340px;
+    min-height: 200px;
+    max-width: 100%;
+  }
+
+  .form-grid,
+  .settings-grid,
+  .history-item,
+  .batch-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .provider-tabs,
+  .segmented {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .segmented.four {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .provider-tabs button,
+  .segmented button {
+    min-width: 0;
+  }
+
+  img,
+  video,
+  canvas,
+  .image-button,
+  .image-button img,
+  .batch-cell .image-button img {
+    max-width: 100%;
+  }
+
+  .users-row {
+    min-width: 0;
   }
 }
 
@@ -2003,8 +2163,9 @@ button:disabled .mini-spinner {
   }
 
   .app-shell {
-    width: min(100% - 18px, 1400px);
-    padding-top: 10px;
+    width: 100%;
+    max-width: 100%;
+    padding: 10px 8px 24px;
   }
 
   .topbar {
@@ -2012,11 +2173,31 @@ button:disabled .mini-spinner {
   }
 
   .topbar h1 {
-    font-size: clamp(32px, 11vw, 44px);
+    font-size: clamp(24px, 9vw, 34px);
   }
 
   .account-pill {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
     border-radius: 22px;
+  }
+
+  .account-pill > span {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .account-pill button {
+    width: 100%;
+    min-width: 0;
+    flex: none;
   }
 
   .composer,
@@ -2045,7 +2226,7 @@ button:disabled .mini-spinner {
   }
 
   .empty-preview {
-    min-height: 260px;
+    min-height: 220px;
     padding: 20px;
     text-align: center;
   }
@@ -2091,5 +2272,15 @@ button:disabled .mini-spinner {
   .close {
     top: 18px;
     right: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .account-pill {
+    grid-template-columns: 1fr;
+  }
+
+  .account-pill button {
+    white-space: normal;
   }
 }
