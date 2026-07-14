@@ -119,6 +119,9 @@
 !/dist/
 !/dist/**
 
+# 部署兜底：postinstall 生成的字面量入口文件，只在容器内需要，不进仓库
+\*.js
+
 # Temporary files
 *.tmp
 *.temp

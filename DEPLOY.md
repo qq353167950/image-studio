@@ -29,7 +29,7 @@ Pterodactyl 面板和普通 Node 平台不同，有几个关键差异：
 |------|-----|------|
 | `GIT_ADDRESS` | `https://github.com/qq353167950/image-studio.git` | 仓库地址 |
 | `BRANCH` | `main` | **注意**：老 egg 可能默认填 `master`，会拉不到，务必核对 |
-| `MAIN_FILE` | `server/index.js` | 默认是 `index.js`，**必须改** |
+| `MAIN_FILE` | `*.js` | 默认是 `index.js`，**必须改**。填字面量 `*.js`（不是 `server/index.js`），原因见「已知坑」的 egg ts-node 崩溃条 |
 | `AUTO_UPDATE` | `1`（开） | 每次启动自动 `git pull`，是"改代码后自动更新"的关键 |
 | `USER_UPLOAD` | `0`（关） | 走 Git 部署就关掉；想手动传文件才开 |
 | Git Username / Access Token | 留空 | 仓库是 public，不需要认证 |
@@ -123,6 +123,20 @@ git push
 - **cloudflared 首次需联网下载**（约 36MB）。若容器禁外网导致
   `[tunnel] cloudflared 下载失败`，可手动下载对应平台二进制上传到 `bin/cloudflared`
   并加可执行权限。
+- **egg 强制走 ts-node 导致崩溃**：部分 Node egg 的启动脚本形如
+  `if [[ "${MAIN_FILE}" == "*.js" ]]; then node ...; else ts-node --esm ...; fi`。
+  这里 `"*.js"` 被加了引号，bash 当**字面量**比较而非通配匹配，普通入口
+  （如 `server/index.js`）永远匹配不上，于是被路由到 `ts-node`，而容器里的
+  `ts-node@10.9.2 --esm` 在 Node 21/22 上会崩在
+  `configuration.js:91 Cannot read properties of undefined (reading 'fileExists')`。
+  这是 egg 的 bug，与本项目代码无关。
+  **解决办法**：把 Startup 页的 `MAIN_FILE` 设为字面量 `*.js`（命中 node 分支）。
+  项目 `postinstall`（`scripts/prepare-entry.mjs`）会在容器安装阶段生成一个文件名就叫
+  `*.js` 的 ESM 引导文件，只负责 `import('./server/index.js')`；
+  `node "/home/container/*.js"` 在双引号内不做通配展开，直接打开该字面文件，全程不碰 ts-node。
+  该引导文件已在 `.gitignore` 中排除，不进仓库；Windows 不允许 `*` 文件名，本地生成会自动跳过，不影响开发。
+  若面板允许编辑 Startup Command，更干净的做法是把该判断的引号去掉
+  （`[[ ${MAIN_FILE} == *.js ]]`）或直接改为 `node "/home/container/${MAIN_FILE}"`。
 - **公开仓库 + 默认密码**：`data/store.json` 含默认 `admin/admin123`，public 仓库任何人可见。
   正式使用请登录后修改密码。
 

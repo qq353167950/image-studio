@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/prepare-entry.mjs",
     "dev": "NODE_PATH=$(npm root -g) concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "NODE_PATH=$(npm root -g) vite --host 0.0.0.0",
     "dev:server": "NODE_PATH=$(npm root -g) node --watch server/index.js",
